@@ -474,5 +474,25 @@ class RegionalFocalPoint(db.Model):
 	id = db.Column(db.Integer, primary_key=True)
 	regional_id = db.Column(db.Integer, db.ForeignKey('region.id'), nullable=False)
 	focal_point_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-	
+
+class Checklist(db.Model):
+	__tablename__ = 'checklist'
+
+	id = db.Column(db.Integer, primary_key=True)
+	task_name = db.Column(db.String)
+	task_description = db.Column(db.String)
+	task_url = db.Column(db.String)
+	created_at = db.Column(db.DateTime, server_default=func.now())
+	updated_at = db.Column(db.DateTime, onupdate=func.now())
+
+class AssignmentChecklist(db.Model):
+	__tablename__ = 'assignment_checklist'
+
+	id = db.Column(db.Integer, primary_key=True)
+	emergency_id = db.Column(db.Integer, db.ForeignKey('emergency.id'))
+	checklist_id = db.Column(db.Integer, db.ForeignKey('checklist.id'))
+	task_completed = db.Column(db.Boolean)
+	task_completed_date = db.Column(db.DateTime, nullable=True)
+	created_at = db.Column(db.DateTime, server_default=func.now())
+	updated_at = db.Column(db.DateTime, onupdate=func.now())	
 	

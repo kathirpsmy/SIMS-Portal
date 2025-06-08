@@ -1,0 +1,317 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container">
+    <div id="hideMe">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+               {% if messages %}
+                   {% for category, message in messages %}
+                       <div class="mt-2 alert alert-{{ category }}">
+                           {{ message }} 
+                       </div>
+                   {% endfor %}
+               {% endif %}
+        {% endwith %}
+    </div>
+    <div class="row mt-3 mb-5">
+    <div class="col col-md-3 rounded rounded-3 mb-5">
+        <div class="card p-4 bg-danger mt-5 position-sticky" style="top: 15px;">
+                <div class="row">
+                    <div>
+                        <h5 class="text-light Montserrat mb-3">Admin Controls</h5>
+                    <ul class="list-group border-0">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/admin/manage_profiles" class="text-secondary">
+                                <i data-feather="user" class="mr-3"></i>
+                                &nbsp Manage Profiles
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div class="text-secondary">
+                                <i data-feather="award" class="mr-3"></i> 
+                                &nbsp Assign Badges
+                            </div>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/admin/upload_badges" class="text-secondary">
+                                <i data-feather="upload" class="mr-3"></i> 
+                                &nbsp Upload Badges
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/admin/approve_members" class="text-secondary">
+                                <i data-feather="thumbs-up" class="mr-3"></i> 
+                                &nbsp Approve Members
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/admin/process_reviews" class="text-secondary">
+                                <i data-feather="book-open" class="mr-3"></i> 
+                                &nbsp Open Reviews
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/admin/edit_skills" class="text-secondary">
+                                <i data-feather="list" class="mr-3"></i> 
+                                &nbsp Skills List
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/admin/process_acronyms" class="text-secondary">
+                                <i data-feather="pen-tool" class="mr-3"></i> 
+                                &nbsp Process Acronyms
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/admin/assign_regional_focal_point" class="text-secondary">
+                                <i data-feather="globe" class="mr-3"></i> 
+                                &nbsp Focal Points
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/admin/view_logs" class="text-secondary">
+                                <i data-feather="activity" class="mr-3"></i> 
+                                &nbsp Activity Logs
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/admin/send_slack_message" class="text-secondary">
+                                <i data-feather="slack" class="mr-3"></i> 
+                                &nbsp Slack Message
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="#" class="text-secondary active-link">
+                                <i data-feather="check" class="mr-3"></i> 
+                                &nbsp Checklists
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/manual_refresh" class="text-secondary">
+                                <i data-feather="refresh-ccw" class="mr-3"></i> 
+                                &nbsp Manual Refresh
+                            </a>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="/admin" class="text-secondary">
+                                <i data-feather="settings" class="mr-3"></i> 
+                                &nbsp Admin Backend
+                            </a>
+                        </li>
+                    </ul>
+                    </div>
+                </div>
+            </div>		
+        </div>
+        <div class="col g-5">
+
+            <!-- Tab navigation -->
+            <ul class="nav nav-pills mb-5" id="admin-checklist-nav" role="tablist">
+                <li class="nav-item" role="presentation">
+                <button class="nav-link {{ 'active' if active_tab != 'emergency-checklist' else '' }}" id="manage-checklist-tab" data-bs-toggle="pill" data-bs-target="#manage-checklist" type="button" role="tab" aria-controls="manage-checklist" aria-selected="true">Manage Checklist</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                <button class="nav-link {{ 'active' if active_tab == 'emergency-checklist' else '' }}" id="emergency-checklist-tab" data-bs-toggle="pill" data-bs-target="#emergency-checklist" type="button" role="tab" aria-controls="emergency-checklist" aria-selected="false">Emergency Checklist</button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="admin-checklist-content">
+                <div class="tab-pane fade show {{ 'active' if active_tab != 'emergency-checklist' else '' }}" id="manage-checklist" role="tabpanel" aria-labelledby="manage-checklist-tab">
+                    <h2 class="text-danger Montserrat mb-4">Checklist</h2>
+                    <h5 class="text-danger Montserrat">Checklist Details</h5>
+                    <p id="sidebar-guidance">The checklist is a collection of tasks that need to be completed. Please provide a clear and concise description of each task.</p>
+                
+                    <div class="col">
+                        <form action="" method="POST" class="mx-auto p-4 bg-light text-light rounded-3 border border-3" novalidate>
+                        {{ form.hidden_tag() }}
+                        <div class="row">
+                            <h4 class="text-danger Montserrat pb-3">{{ checklist_name }}</h4>
+                            <div class="col-md-6">
+                            <div class="form-group pb-4">
+                                {{ form.task_name.label(class="form-control-label pb-2 text-danger") }}
+                                {% if form.task_name.errors %}
+                                {{ form.task_name(class="form-control form-control-lg is-invalid") }}
+                                <div class="invalid-feedback">
+                                    {% for error in form.task_name.errors %}
+                                    <span>{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% else %}
+                                {{ form.task_name(class="form-control form-control-lg") }}
+                                {% endif %}
+                            </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col">
+                            <div class="form-group pb-4">
+                                {{ form.task_description.label(class="form-control-label pb-2 text-danger") }}
+                                {% if form.task_description.errors %}
+                                {{ form.task_description(class="form-control form-control-lg is-invalid") }}
+                                <div class="invalid-feedback">
+                                    {% for error in form.task_description.errors %}
+                                    <span>{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% else %}
+                                {{ form.task_description(class="form-control form-control-lg") }}
+                                {% endif %}
+                            </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col">
+                            <div class="form-group pb-4">
+                                {{ form.task_url.label(class="form-control-label pb-2 text-danger") }}
+                                {% if form.task_url.errors %}
+                                {{ form.task_url(class="form-control form-control-lg is-invalid") }}
+                                <div class="invalid-feedback">
+                                    {% for error in form.task_url.errors %}
+                                    <span>{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% else %}
+                                {{ form.task_url(class="form-control form-control-lg") }}
+                                {% endif %}
+                            </div>
+                            </div>
+                        </div>
+                        {{ form.submit(class="btn btn-outline-danger") }}
+                        </form>
+                    </div>
+                    
+                    <table class='table table-striped table-hover mt-5'>
+                        <thead>
+                        <tr>
+                            <th>Task Name</th>
+                            <th>Task Description</th>
+                            <th>Task URL</th>
+                            <th>Edit</th>
+                            <th>Remove</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for task in tasks %}
+                        <tr>
+                            <td class='align-middle h5 Montserrat text-danger'>{{ task.task_name }}</td>
+                            <td class='align-middle'>{{ task.task_description }}</td>
+                            <td class='align-middle'>{{ task.task_url }}</td>
+                            <td class='align-middle'>
+                            <a href="/admin/manage_checklist/edit/{{ task.id }}" class="btn btn-outline-danger">Edit</a>
+                            </td>
+                            <td class='align-middle'>
+                                <a href="/admin/manage_checklist/remove/{{ task.id }}" class="btn btn-outline-danger">Remove</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="tab-pane fade {{ 'show active' if active_tab == 'emergency-checklist' else '' }}" id="emergency-checklist" role="tabpanel" aria-labelledby="emergency-checklist-tab">
+                    <h3>Emergency Checklist</h3>
+                    <p id="sidebar-guidance">The emergency checklist is a collection of tasks that need to be completed during an emergency. This section is only for active emergencies. Use the following section to add or update tasks.</p>
+                    {% for emergency in active_emergencies %}
+                        <div class="card mb-3">
+                            <div class="card-header text-center bg-danger text-white">
+                                <h5 class="card-title">{{ emergency.emergency_name }}</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <h5>Added Tasks</h5>
+                                        <table class="table table-striped">
+                                            <thead>
+                                                <tr>
+                                                    <th>Task Name</th>
+                                                    <th>Completed</th>
+                                                    <th>Completed On</th>
+                                                    <th>Update</th>
+                                                    <th>Remove</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% set checklist_ids = assignment_checklists | selectattr('emergency_id', 'equalto', emergency.id) | map(attribute='checklist_id') | unique | list  %}
+                                                {% for task in tasks %}
+                                                    {% if task.id in checklist_ids %}
+                                                        {% set emergency_checklists = assignment_checklists | selectattr('emergency_id', 'equalto', emergency.id) %}
+                                                        {% with task_checklists = emergency_checklists | selectattr('checklist_id', 'equalto', task.id) | first %}
+                                                        <tr>
+                                                            <form action="{{ url_for('main.update_task_from_emergency', emergency_id=emergency.id, task_id=task.id) }}" method="POST" >
+                                                                {{ chk_form.hidden_tag() }}
+                                                                {{ chk_form.checklist_id(value=task_checklists.checklist_id) }}
+                                                                {{ chk_form.emergency_id(value=emergency.id) }}
+                                                            <td>{{ task.task_name }}</td>
+                                                            <td>
+                                                                <div class="form-check">
+                                                                    <input class="form-check-input" type="checkbox" {% if task_checklists.task_completed %}checked{% endif %} id="check-{{ task.id }}" onclick="toggleCompletedAt(this, '{{ task.id }}')" />
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                <div class="form-group">
+                                                                    {{ chk_form.complted_at(class_='form-control', id='complted_at-' ~ task.id, disabled=not task_checklists.task_completed, value=task_checklists.updated_at.strftime('%Y-%m-%d') if task_checklists.task_completed else '') }}
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                {{ chk_form.submit(class='btn btn-outline-danger', id='submit', value='Update') }}
+                                                            </td>
+                                                            <td>
+                                                                <a href="/admin/manage_checklist/remove/task/{{ emergency.id }}/{{ task.id }}" class="btn btn-outline-danger">Remove</a>
+                                                            </td>
+                                                        </form>
+                                                        <script>
+                                                            function toggleCompletedAt(checkbox, id) {
+                                                                const completedAt = document.getElementById('complted_at-' + id);
+                                                                if (checkbox.checked) {
+                                                                    completedAt.disabled = false;
+                                                                    completedAt.value = new Date().toISOString().split('T')[0];
+                                                                } else {
+                                                                    completedAt.disabled = true;
+                                                                    completedAt.value = '';
+                                                                }
+                                                            }
+                                                        </script>
+                                                        </tr>
+                                                        {% endwith %}
+                                                    {% endif %}                                                    
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <h5>Available Tasks</h5>
+                                        <table class="table table-striped">
+                                            <thead>
+                                                <tr>
+                                                    <th>Task Name</th>
+                                                    <th>Add</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% set checklist_ids = assignment_checklists | selectattr('emergency_id', 'equalto', emergency.id) | map(attribute='checklist_id') | unique | list %}
+                                                {% for task in tasks %}
+                                                    {% if task.id not in checklist_ids %}
+                                                        <tr>
+                                                            <td>{{ task.task_name }}</td>
+                                                            <td>
+                                                                <a href="/admin/manage_checklist/add/task/{{ emergency.id }}/{{ task.id }}" class="btn btn-outline-success">Add</a>
+                                                            </td>
+                                                        </tr>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+                
+            </div>
+        
+        </div>
+    </div>
+</div>
+
+{% endblock content %}

@@ -5,7 +5,9 @@ from wtforms.widgets import TextArea
 from wtforms_sqlalchemy.fields import QuerySelectField
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError
 from flask_wtf.file import FileField, FileAllowed
+from wtforms.widgets import HiddenInput
 from SIMS_Portal import db
+from datetime import datetime
 from SIMS_Portal.models import User, Emergency, Portfolio, Skill, Language, EmergencyType, NationalSociety, Badge, Assignment
 
 class ManualSlackMessage(FlaskForm):
@@ -56,3 +58,22 @@ class NewBadgeUploadForm(FlaskForm):
 	description = StringField('Badge Description', validators=[DataRequired()])
 	limited_edition = BooleanField('Limited Edition?')
 	upload_badge = SubmitField('Upload New Badge')
+
+class NewChecklistForm(FlaskForm):
+    task_name = StringField('Task Name', validators=[DataRequired(), Length(min=5, max=100)])
+    task_description = TextAreaField('Task Description', validators=[DataRequired()])
+    task_url = StringField('Task URL', validators=[DataRequired(), Length(min=5, max=100)])
+    submit = SubmitField('Add Task')
+	
+class UpdateChecklistForm(FlaskForm):
+    task_name = StringField('Task Name', validators=[DataRequired(), Length(min=5, max=100)])
+    task_description = TextAreaField('Task Description', validators=[DataRequired()])
+    task_url = StringField('Task URL', validators=[DataRequired(), Length(min=5, max=100)])
+    submit = SubmitField('Update Task')	
+
+class UpdateEmergenyChecklistForm(FlaskForm):
+	emergency_id = HiddenField('emergency_id')
+	checklist_id = HiddenField('checklist_id')
+	task_completed = BooleanField('Task Completed', default=False, widget=HiddenInput())
+	complted_at = DateTimeField('Completed At', format='%Y-%m-%d', default=datetime.now)
+	submit = SubmitField('Mark Complete')	

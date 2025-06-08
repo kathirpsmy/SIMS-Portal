@@ -26,12 +26,13 @@ from SIMS_Portal.models import (
 	Assignment, User, Emergency, Alert, user_skill, user_language, Portfolio,
 	user_badge, Skill, Language, NationalSociety, Badge, Story,
 	EmergencyType, Review, user_profile, Profile, Log, Acronym, RegionalFocalPoint, Region,
-	Task
+	Task, Checklist, AssignmentChecklist
 )
 from SIMS_Portal.main.forms import (
 	MemberSearchForm, EmergencySearchForm, ProductSearchForm,
 	BadgeAssignmentForm, SkillCreatorForm, BadgeAssignmentViaSIMSCoForm,
-	NewBadgeUploadForm, ManualSlackMessage
+	NewBadgeUploadForm, ManualSlackMessage, NewChecklistForm, UpdateChecklistForm,
+	UpdateEmergenyChecklistForm
 )
 from SIMS_Portal.main.utils import (
 	fetch_slack_channels, check_sims_co, save_new_badge,
@@ -664,3 +665,147 @@ def staging():
 		current_app.logger.warning('User-{}, a non-administrator, tried to access the staging area'.format(current_user.id))
 		list_of_admins = db.session.query(User).filter(User.is_admin == 1).all()
 		return render_template('errors/403.html', list_of_admins=list_of_admins), 403
+
+def render_admin_checklist_management(active_tab = ''):
+	form = NewChecklistForm()
+	chk_form = UpdateEmergenyChecklistForm()
+	
+	tasks = db.session.query(Checklist).order_by(Checklist.id.asc()).all()
+
+	active_emergencies = db.session.query(Emergency.id, Emergency.emergency_name).filter(Emergency.emergency_status == 'Active').all()
+
+	assignment_checklists = db.session.query(AssignmentChecklist).all()
+
+	return render_template('admin_manage_checklist.html', form=form, tasks=tasks, assignment_checklists=assignment_checklists, active_emergencies=active_emergencies, active_tab=active_tab, chk_form=chk_form)
+
+@main.route('/admin/manage_checklist', methods=['GET', 'POST'])
+@login_required
+def manage_checklist():
+	form = NewChecklistForm()
+	chk_form = UpdateEmergenyChecklistForm()
+
+	if request.method == 'GET' and current_user.is_admin == 1:
+		
+		tasks = db.session.query(Checklist).order_by(Checklist.id.asc()).all()
+
+		active_emergencies = db.session.query(Emergency.id, Emergency.emergency_name).filter(Emergency.emergency_status == 'Active').all()
+
+		assignment_checklists = db.session.query(AssignmentChecklist).all()
+
+		return render_template('admin_manage_checklist.html', form=form, tasks=tasks, assignment_checklists=assignment_checklists, active_emergencies=active_emergencies, chk_form=chk_form)
+
+	if request.method == 'POST' and current_user.is_admin == 1:
+		if form.validate_on_submit():
+			checklist = Checklist(
+				task_name=form.task_name.data,
+				task_description=form.task_description.data,
+				task_url=form.task_url.data
+			)
+
+			db.session.add(checklist)
+			db.session.commit()
+
+			flash('New checklist successfully created.', 'success')		
+
+			return redirect(url_for('main.manage_checklist'))
+
+
+	return render_template('admin_manage_checklist.html', form=form, chk_form=chk_form)
+
+@main.route('/admin/manage_checklist/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+def edit(id):
+    tasks = db.session.query(Checklist).order_by(Checklist.id.asc()).all()
+    form = UpdateChecklistForm()
+    
+    checklist_info = db.session.query(Checklist).filter(Checklist.id == id).first()
+
+    tasks = db.session.query(Checklist).order_by(Checklist.id.asc()).all()
+
+    active_emergencies = db.session.query(Emergency.id, Emergency.emergency_name).filter(Emergency.emergency_status == 'Active').all()
+
+    assignment_checklists = db.session.query(AssignmentChecklist).all()
+
+
+    if form.validate_on_submit():
+        checklist_info.task_name = form.task_name.data
+        checklist_info.task_description = form.task_description.data
+        checklist_info.task_url = form.task_url.data
+        db.session.commit()
+        flash('Checklist successfully updated.', 'success')
+        return redirect(url_for('main.manage_checklist'))        
+    elif request.method == 'GET':
+        form.task_name.data = checklist_info.task_name
+        form.task_description.data = checklist_info.task_description
+        form.task_url.data = checklist_info.task_url
+
+    return render_template('admin_manage_checklist.html', form=form, tasks=tasks, assignment_checklists=assignment_checklists, active_emergencies=active_emergencies)
+
+@main.route('/admin/manage_checklist/remove/<int:id>', methods=['GET', 'POST'])
+@login_required
+def remove(id):
+	checklist_info = db.session.query(Checklist).filter(Checklist.id == id).first()
+	db.session.delete(checklist_info)
+	db.session.commit()
+	flash('Checklist successfully removed.', 'success')
+	return redirect(url_for('main.manage_checklist'))
+
+
+@main.route('/admin/manage_checklist/add/task/<int:emergency_id>/<int:task_id>', methods=['GET', 'POST'])
+@login_required
+def add_task_to_emergency(emergency_id, task_id):
+	# remove task from emergency
+	db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id, AssignmentChecklist.checklist_id == task_id).delete()
+	db.session.commit()
+	# add task to emergency
+	assignment_checklist = AssignmentChecklist(emergency_id=emergency_id, checklist_id=task_id, task_completed=False)
+	db.session.add(assignment_checklist)
+	db.session.commit()
+	flash('Task successfully added to emergency.', 'success')
+	return render_admin_checklist_management('emergency-checklist')
+
+@main.route('/admin/manage_checklist/remove/task/<int:emergency_id>/<int:task_id>', methods=['GET', 'POST'])
+@login_required
+def remove_task_from_emergency(emergency_id, task_id):
+	db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id).filter(AssignmentChecklist.checklist_id == task_id).delete()
+	db.session.commit()
+	flash('Task successfully removed from emergency.', 'success')
+	return render_admin_checklist_management('emergency-checklist')
+
+# @main.route('/admin/manage_checklist/update/task/<int:emergency_id>/<int:task_id>/<int:task_completed>/<string:task_completed_date>', defaults={'task_completed_date': None}, methods=['GET', 'POST'])
+# @login_required
+# def update_task_from_emergency(emergency_id, task_id, task_completed, task_completed_date):
+# 	task_completed_bool = task_completed == 1
+# 	if task_completed_bool == True:
+# 		if task_completed_date == None:
+# 			task_completed_date = datetime.now()
+# 		else:
+# 			task_completed_date = datetime.strptime(task_completed_date, '%Y-%m-%d %H:%M:%S.%f')	
+# 		db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id).filter(AssignmentChecklist.checklist_id == task_id).update({"task_completed": task_completed_bool, "updated_at": task_completed_date})
+# 	else:
+# 		db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id).filter(AssignmentChecklist.checklist_id == task_id).update({"task_completed": task_completed_bool, "updated_at": None})
+# 	db.session.commit()
+# 	flash('Task successfully updated.', 'success')
+# 	return render_admin_checklist_management('emergency-checklist')
+
+@main.route('/admin/manage_checklist/update/task/<int:emergency_id>/<int:task_id>', methods=['POST'])
+@login_required
+def update_task_from_emergency(emergency_id, task_id):
+	form = UpdateEmergenyChecklistForm()
+	
+	if form.validate_on_submit():
+		task_completed_bool = form.task_completed.data
+		if task_completed_bool == True:
+			if form.complted_at.data == None:
+				task_completed_date = datetime.now()
+			else:
+				task_completed_date = form.complted_at.data
+		else:
+			task_completed_date = None
+		
+		db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id).filter(AssignmentChecklist.checklist_id == task_id).update({"task_completed": task_completed_bool, "updated_at": task_completed_date})
+		db.session.commit()
+		flash('Task successfully updated.', 'success')
+	
+	return render_admin_checklist_management('emergency-checklist')
+

@@ -20,10 +20,11 @@ from SIMS_Portal.config import Config
 from SIMS_Portal.models import (
 	User, Assignment, Emergency, NationalSociety,
 	EmergencyType, Alert, Portfolio, Story,
-	Learning, Review, Availability, Log, Task
+	Learning, Review, Availability, Log, Task,
+	AssignmentChecklist, Checklist
 )
 from SIMS_Portal.emergencies.forms import (
-	NewEmergencyForm, UpdateEmergencyForm
+	NewEmergencyForm, UpdateEmergencyForm, UpdateEmergenyChecklistForm
 )
 from SIMS_Portal.emergencies.utils import (
 	update_response_locations, update_active_response_locations,
@@ -330,6 +331,28 @@ def view_emergency(id):
 	
 	# convert task_counts to dict
 	task_counts_dict = {github: count for github, count in task_counts}
+
+	assignmet_checklist = (
+		db.session.query(AssignmentChecklist, Checklist)
+		.select_from(AssignmentChecklist)
+		.join(Checklist, Checklist.id == AssignmentChecklist.checklist_id)
+		.filter(AssignmentChecklist.emergency_id == id)
+		.order_by(AssignmentChecklist.id.asc())
+		.add_columns(
+			AssignmentChecklist.id.label("id"),
+			AssignmentChecklist.emergency_id.label("emergency_id"),
+			AssignmentChecklist.checklist_id.label("checklist_id"),
+			AssignmentChecklist.task_completed.label("task_completed"),
+			AssignmentChecklist.created_at.label("created_at"),
+			AssignmentChecklist.updated_at.label("updated_at"),
+			Checklist.task_name.label("checklist_task_name"),
+			Checklist.task_description.label("checklist_task_description"),
+			Checklist.task_url.label("checklist_task_url"),
+		)
+		.all()
+	)
+
+	tasks = db.session.query(Checklist).order_by(Checklist.id.asc()).all()
 	
 	return render_template(
 		'emergency.html', 
@@ -365,8 +388,33 @@ def view_emergency(id):
 		available_supporter_next_week_list=available_supporter_next_week_list, 
 		show_slack_modal=show_slack_modal,
 		task_counts_dict=task_counts_dict,
-		issues_list=issues_list
+		issues_list=issues_list,
+		assignmet_checklist=assignmet_checklist,
+		tasks=tasks,
+		current_date=datetime.today().strftime('%Y-%m-%d'),
+		chk_form=UpdateEmergenyChecklistForm(),
 	)
+
+@emergencies.route('/emergency/manage_checklist/update/task/<int:emergency_id>/<int:task_id>', methods=['POST'])
+@login_required
+def update_task_from_emergency(emergency_id, task_id):
+	form = UpdateEmergenyChecklistForm()
+	
+	if form.validate_on_submit():
+		task_completed_bool = form.task_completed.data
+		if task_completed_bool == True:
+			if form.complted_at.data == None:
+				task_completed_date = datetime.now()
+			else:
+				task_completed_date = form.complted_at.data
+		else:
+			task_completed_date = None
+		
+		db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id).filter(AssignmentChecklist.checklist_id == task_id).update({"task_completed": task_completed_bool, "updated_at": task_completed_date})
+		db.session.commit()
+		flash('Task successfully updated.', 'success')
+	
+	return redirect(url_for('emergencies.view_emergency', id=emergency_id))
 
 @emergencies.route('/emergency/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
