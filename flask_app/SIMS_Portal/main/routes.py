@@ -5,6 +5,7 @@ import logging
 import os
 import re
 from datetime import datetime, timedelta
+from time import timezone
 
 import pandas as pd
 from flask import (
@@ -26,13 +27,13 @@ from SIMS_Portal.models import (
 	Assignment, User, Emergency, Alert, user_skill, user_language, Portfolio,
 	user_badge, Skill, Language, NationalSociety, Badge, Story,
 	EmergencyType, Review, user_profile, Profile, Log, Acronym, RegionalFocalPoint, Region,
-	Task, Checklist, AssignmentChecklist
+	Task, Checklist, AssignmentChecklist, AssignmentSubTask
 )
 from SIMS_Portal.main.forms import (
 	MemberSearchForm, EmergencySearchForm, ProductSearchForm,
 	BadgeAssignmentForm, SkillCreatorForm, BadgeAssignmentViaSIMSCoForm,
 	NewBadgeUploadForm, ManualSlackMessage, NewChecklistForm, UpdateChecklistForm,
-	UpdateEmergenyChecklistForm
+	UpdateEmergenyChecklistForm, SubTaskForm, EditChecklistForm, EditSubTaskForm, AssignChecklistToEmergencyForm
 )
 from SIMS_Portal.main.utils import (
 	fetch_slack_channels, check_sims_co, save_new_badge,
@@ -681,131 +682,228 @@ def render_admin_checklist_management(active_tab = ''):
 @main.route('/admin/manage_checklist', methods=['GET', 'POST'])
 @login_required
 def manage_checklist():
-	form = NewChecklistForm()
-	chk_form = UpdateEmergenyChecklistForm()
+    from SIMS_Portal.models import Checklist, SubTask, Emergency, AssignmentChecklist
+    from SIMS_Portal.main.forms import SubTaskForm, AssignChecklistToEmergencyForm
+    checklists = Checklist.query.order_by(Checklist.id).all()
+    subtask_forms = {cl.id: SubTaskForm(prefix=f'subtask_{cl.id}') for cl in checklists}
+    active_emergencies = Emergency.query.filter(Emergency.emergency_status == 'Active').all()
+    assign_form = AssignChecklistToEmergencyForm()
+    assign_form.emergency_id.choices = [(e.id, e.emergency_name) for e in active_emergencies]
 
-	if request.method == 'GET' and current_user.is_admin == 1:
-		
-		tasks = db.session.query(Checklist).order_by(Checklist.id.asc()).all()
+    # For emergency checklist tab, show assignments for selected emergency
+    selected_emergency_id = request.args.get('emergency_id')
+    assigned_task_ids = set()
+    assigned_subtask_ids = set()
+    if selected_emergency_id:
+        assignments = AssignmentChecklist.query.filter_by(emergency_id=selected_emergency_id).all()
+        assigned_task_ids = {a.checklist_id for a in assignments}
+        assigned_subtask_ids = {ast.sub_task_id for a in assignments for ast in a.sub_tasks}
+        assign_form.emergency_id.data = int(selected_emergency_id)
 
-		active_emergencies = db.session.query(Emergency.id, Emergency.emergency_name).filter(Emergency.emergency_status == 'Active').all()
+    return render_template('admin_manage_checklist.html', checklists=checklists, subtask_forms=subtask_forms, active_emergencies=active_emergencies, assign_form=assign_form, assignment_checklists=[], assigned_task_ids=assigned_task_ids, assigned_subtask_ids=assigned_subtask_ids, active_tab=request.args.get('active_tab', ''))
 
-		assignment_checklists = db.session.query(AssignmentChecklist).all()
-
-		return render_template('admin_manage_checklist.html', form=form, tasks=tasks, assignment_checklists=assignment_checklists, active_emergencies=active_emergencies, chk_form=chk_form)
-
-	if request.method == 'POST' and current_user.is_admin == 1:
-		if form.validate_on_submit():
-			checklist = Checklist(
-				task_name=form.task_name.data,
-				task_description=form.task_description.data,
-				task_url=form.task_url.data
-			)
-
-			db.session.add(checklist)
-			db.session.commit()
-
-			flash('New checklist successfully created.', 'success')		
-
-			return redirect(url_for('main.manage_checklist'))
-
-
-	return render_template('admin_manage_checklist.html', form=form, chk_form=chk_form)
+@main.route('/admin/manage_checklist/add_subtask/<int:checklist_id>', methods=['POST'])
+@login_required
+def add_subtask(checklist_id):
+    from SIMS_Portal.models import SubTask, Checklist, Emergency
+    from SIMS_Portal.main.forms import SubTaskForm
+    checklists = Checklist.query.order_by(Checklist.id).all()
+    subtask_forms = {cl.id: SubTaskForm(prefix=f'subtask_{cl.id}') for cl in checklists}
+    active_emergencies = Emergency.query.filter(Emergency.emergency_status == 'Active').all()
+    form = SubTaskForm(prefix=f'subtask_{checklist_id}')
+    if form.validate_on_submit():
+        subtask = SubTask(checklist_id=checklist_id, name=form.name.data, description=form.description.data, task_url=form.task_url.data)
+        db.session.add(subtask)
+        db.session.commit()
+        flash('Sub-task added successfully.', 'success')
+        return redirect(url_for('main.manage_checklist'))
+    else:
+        flash('Error adding sub-task. Please check your input.', 'danger')
+        subtask_forms[checklist_id] = form
+        return render_template('admin_manage_checklist.html', checklists=checklists, subtask_forms=subtask_forms, active_emergencies=active_emergencies, active_tab=request.args.get('active_tab', ''))
 
 @main.route('/admin/manage_checklist/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
-def edit(id):
-    tasks = db.session.query(Checklist).order_by(Checklist.id.asc()).all()
-    form = UpdateChecklistForm()
-    
-    checklist_info = db.session.query(Checklist).filter(Checklist.id == id).first()
-
-    tasks = db.session.query(Checklist).order_by(Checklist.id.asc()).all()
-
-    active_emergencies = db.session.query(Emergency.id, Emergency.emergency_name).filter(Emergency.emergency_status == 'Active').all()
-
-    assignment_checklists = db.session.query(AssignmentChecklist).all()
-
-
+def edit_checklist(id):
+    from SIMS_Portal.models import Checklist
+    from SIMS_Portal.main.forms import EditChecklistForm
+    checklist = Checklist.query.get_or_404(id)
+    form = EditChecklistForm(obj=checklist)
     if form.validate_on_submit():
-        checklist_info.task_name = form.task_name.data
-        checklist_info.task_description = form.task_description.data
-        checklist_info.task_url = form.task_url.data
+        checklist.task_name = form.task_name.data
+        checklist.task_description = form.task_description.data
+        checklist.task_url = form.task_url.data
         db.session.commit()
-        flash('Checklist successfully updated.', 'success')
-        return redirect(url_for('main.manage_checklist'))        
-    elif request.method == 'GET':
-        form.task_name.data = checklist_info.task_name
-        form.task_description.data = checklist_info.task_description
-        form.task_url.data = checklist_info.task_url
-
-    return render_template('admin_manage_checklist.html', form=form, tasks=tasks, assignment_checklists=assignment_checklists, active_emergencies=active_emergencies)
+        flash('Checklist updated successfully.', 'success')
+        return redirect(url_for('main.manage_checklist'))
+    return render_template('edit_checklist.html', checklist=checklist, form=form)
 
 @main.route('/admin/manage_checklist/remove/<int:id>', methods=['GET', 'POST'])
 @login_required
-def remove(id):
-	checklist_info = db.session.query(Checklist).filter(Checklist.id == id).first()
-	db.session.delete(checklist_info)
-	db.session.commit()
-	flash('Checklist successfully removed.', 'success')
-	return redirect(url_for('main.manage_checklist'))
+def remove_checklist(id):
+    from SIMS_Portal.models import Checklist
+    checklist = Checklist.query.get_or_404(id)
+    db.session.delete(checklist)
+    db.session.commit()
+    flash('Checklist removed successfully.', 'success')
+    return redirect(url_for('main.manage_checklist'))
 
-
-@main.route('/admin/manage_checklist/add/task/<int:emergency_id>/<int:task_id>', methods=['GET', 'POST'])
+# SubTask CRUD
+@main.route('/admin/manage_checklist/edit_subtask/<int:subtask_id>', methods=['GET', 'POST'])
 @login_required
-def add_task_to_emergency(emergency_id, task_id):
-	# remove task from emergency
-	db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id, AssignmentChecklist.checklist_id == task_id).delete()
-	db.session.commit()
-	# add task to emergency
-	assignment_checklist = AssignmentChecklist(emergency_id=emergency_id, checklist_id=task_id, task_completed=False)
-	db.session.add(assignment_checklist)
-	db.session.commit()
-	flash('Task successfully added to emergency.', 'success')
-	return render_admin_checklist_management('emergency-checklist')
+def edit_subtask(subtask_id):
+    from SIMS_Portal.models import SubTask
+    from SIMS_Portal.main.forms import EditSubTaskForm
+    subtask = SubTask.query.get_or_404(subtask_id)
+    form = EditSubTaskForm(obj=subtask)
+    if form.validate_on_submit():
+        subtask.name = form.name.data
+        subtask.description = form.description.data
+        subtask.task_url = form.task_url.data
+        db.session.commit()
+        flash('Sub-task updated successfully.', 'success')
+        return redirect(url_for('main.manage_checklist'))
+    return render_template('edit_subtask.html', subtask=subtask, form=form)
 
-@main.route('/admin/manage_checklist/remove/task/<int:emergency_id>/<int:task_id>', methods=['GET', 'POST'])
+@main.route('/admin/manage_checklist/remove_subtask/<int:subtask_id>', methods=['GET', 'POST'])
 @login_required
-def remove_task_from_emergency(emergency_id, task_id):
-	db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id).filter(AssignmentChecklist.checklist_id == task_id).delete()
-	db.session.commit()
-	flash('Task successfully removed from emergency.', 'success')
-	return render_admin_checklist_management('emergency-checklist')
+def remove_subtask(subtask_id):
+    from SIMS_Portal.models import SubTask
+    subtask = SubTask.query.get_or_404(subtask_id)
+    db.session.delete(subtask)
+    db.session.commit()
+    flash('Sub-task removed successfully.', 'success')
+    return redirect(url_for('main.manage_checklist'))
 
-# @main.route('/admin/manage_checklist/update/task/<int:emergency_id>/<int:task_id>/<int:task_completed>/<string:task_completed_date>', defaults={'task_completed_date': None}, methods=['GET', 'POST'])
-# @login_required
-# def update_task_from_emergency(emergency_id, task_id, task_completed, task_completed_date):
-# 	task_completed_bool = task_completed == 1
-# 	if task_completed_bool == True:
-# 		if task_completed_date == None:
-# 			task_completed_date = datetime.now()
-# 		else:
-# 			task_completed_date = datetime.strptime(task_completed_date, '%Y-%m-%d %H:%M:%S.%f')	
-# 		db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id).filter(AssignmentChecklist.checklist_id == task_id).update({"task_completed": task_completed_bool, "updated_at": task_completed_date})
-# 	else:
-# 		db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id).filter(AssignmentChecklist.checklist_id == task_id).update({"task_completed": task_completed_bool, "updated_at": None})
-# 	db.session.commit()
-# 	flash('Task successfully updated.', 'success')
-# 	return render_admin_checklist_management('emergency-checklist')
-
-@main.route('/admin/manage_checklist/update/task/<int:emergency_id>/<int:task_id>', methods=['POST'])
+# Emergency Checklist Assignment
+@main.route('/admin/manage_checklist/assign_to_emergency', methods=['POST'])
 @login_required
-def update_task_from_emergency(emergency_id, task_id):
-	form = UpdateEmergenyChecklistForm()
-	
-	if form.validate_on_submit():
-		task_completed_bool = form.task_completed.data
-		if task_completed_bool == True:
-			if form.complted_at.data == None:
-				task_completed_date = datetime.now()
-			else:
-				task_completed_date = form.complted_at.data
-		else:
-			task_completed_date = None
-		
-		db.session.query(AssignmentChecklist).filter(AssignmentChecklist.emergency_id == emergency_id).filter(AssignmentChecklist.checklist_id == task_id).update({"task_completed": task_completed_bool, "updated_at": task_completed_date})
-		db.session.commit()
-		flash('Task successfully updated.', 'success')
-	
-	return render_admin_checklist_management('emergency-checklist')
+def assign_checklist_to_emergency():
+    from SIMS_Portal.models import AssignmentChecklist, AssignmentSubTask, Emergency, Checklist, SubTask
+    from SIMS_Portal.main.forms import AssignChecklistToEmergencyForm
+    form = AssignChecklistToEmergencyForm()
+    # Populate emergency choices
+    emergencies = Emergency.query.filter(Emergency.emergency_status == 'Active').all()
+    form.emergency_id.choices = [(e.id, e.emergency_name) for e in emergencies]
+    if form.validate_on_submit():
+        emergency_id = form.emergency_id.data
+        selected_tasks = request.form.getlist('tasks')
+        for checklist_id in selected_tasks:
+            ac = AssignmentChecklist(emergency_id=emergency_id, checklist_id=checklist_id, task_completed=False)
+            db.session.add(ac)
+            db.session.flush()
+            subtask_ids = request.form.getlist(f'subtasks_{checklist_id}')
+            for subtask_id in subtask_ids:
+                ast = AssignmentSubTask(assignment_checklist_id=ac.id, sub_task_id=subtask_id, task_completed=False)
+                db.session.add(ast)
+        db.session.commit()
+        flash('Checklist and sub-tasks assigned to emergency.', 'success')
+        return redirect(url_for('main.manage_checklist', active_tab='emergency-checklist'))
+    # If not valid, re-render the page with errors
+    checklists = Checklist.query.order_by(Checklist.id).all()
+    subtask_forms = {cl.id: SubTaskForm(prefix=f'subtask_{cl.id}') for cl in checklists}
+    active_emergencies = emergencies
+    return render_template('admin_manage_checklist.html', checklists=checklists, subtask_forms=subtask_forms, active_emergencies=active_emergencies, assign_form=form, active_tab='emergency-checklist')
+
+@main.route('/admin/manage_checklist/edit_assigned_checklist/<int:assignment_id>', methods=['GET', 'POST'])
+@login_required
+def edit_assigned_checklist(assignment_id):
+    from SIMS_Portal.models import AssignmentChecklist, Checklist
+    from SIMS_Portal.main.forms import EditChecklistForm
+    assignment = AssignmentChecklist.query.get_or_404(assignment_id)
+    checklist = assignment.checklist
+    form = EditChecklistForm(obj=checklist)
+    if form.validate_on_submit():
+        checklist.task_name = form.task_name.data
+        checklist.task_description = form.task_description.data
+        checklist.task_url = form.task_url.data
+        db.session.commit()
+        flash('Assigned checklist updated successfully.', 'success')
+        return redirect(url_for('main.manage_checklist', active_tab='emergency-checklist'))
+    return render_template('edit_checklist.html', checklist=checklist, form=form)
+
+@main.route('/admin/manage_checklist/delete_assigned_checklist/<int:assignment_id>', methods=['GET', 'POST'])
+@login_required
+def delete_assigned_checklist(assignment_id):
+    from SIMS_Portal.models import AssignmentChecklist, AssignmentSubTask
+    assignment = AssignmentChecklist.query.get_or_404(assignment_id)
+    # Delete all related AssignmentSubTasks first
+    AssignmentSubTask.query.filter_by(assignment_checklist_id=assignment.id).delete()
+    db.session.delete(assignment)
+    db.session.commit()
+    flash('Assigned checklist deleted successfully.', 'success')
+    return redirect(url_for('main.manage_checklist', active_tab='emergency-checklist'))
+
+@main.route('/admin/manage_checklist/edit_assigned_subtask/<int:assigned_subtask_id>', methods=['GET', 'POST'])
+@login_required
+def edit_assigned_subtask(assigned_subtask_id):
+    from SIMS_Portal.models import AssignmentSubTask, SubTask
+    from SIMS_Portal.main.forms import EditSubTaskForm
+    assigned_subtask = AssignmentSubTask.query.get_or_404(assigned_subtask_id)
+    subtask = assigned_subtask.sub_task
+    form = EditSubTaskForm(obj=subtask)
+    if form.validate_on_submit():
+        subtask.name = form.name.data
+        subtask.description = form.description.data
+        subtask.task_url = form.task_url.data
+        db.session.commit()
+        flash('Assigned sub-task updated successfully.', 'success')
+        return redirect(url_for('main.manage_checklist', active_tab='emergency-checklist'))
+    return render_template('edit_subtask.html', subtask=subtask, form=form)
+
+@main.route('/admin/manage_checklist/delete_assigned_subtask/<int:assigned_subtask_id>', methods=['GET', 'POST'])
+@login_required
+def delete_assigned_subtask(assigned_subtask_id):
+    from SIMS_Portal.models import AssignmentSubTask
+    assigned_subtask = AssignmentSubTask.query.get_or_404(assigned_subtask_id)
+    db.session.delete(assigned_subtask)
+    db.session.commit()
+    flash('Assigned sub-task deleted successfully.', 'success')
+    return redirect(url_for('main.manage_checklist', active_tab='emergency-checklist'))
+
+@main.route('/admin/manage_checklist/update_emergency_checklist', methods=['POST', 'GET'])
+@login_required
+def update_emergency_checklist():
+    from SIMS_Portal.models import AssignmentChecklist, AssignmentSubTask, Emergency, Checklist, SubTask
+    from SIMS_Portal.main.forms import AssignChecklistToEmergencyForm, SubTaskForm
+    checklists = Checklist.query.order_by(Checklist.id).all()
+    subtask_forms = {cl.id: SubTaskForm(prefix=f'subtask_{cl.id}') for cl in checklists}
+    active_emergencies = Emergency.query.filter(Emergency.emergency_status == 'Active').all()
+    assign_form = AssignChecklistToEmergencyForm()
+    assign_form.emergency_id.choices = [(e.id, e.emergency_name) for e in active_emergencies]
+
+    # Get selected emergency (do not default to any)
+    selected_emergency_id = request.values.get('emergency_id')
+    if selected_emergency_id in (None, '', 'None'):
+        assigned_task_ids = set()
+        assigned_subtask_ids = set()
+        assign_form.emergency_id.data = None
+    else:
+        assignments = AssignmentChecklist.query.filter_by(emergency_id=selected_emergency_id).all()
+        assigned_task_ids = {a.checklist_id for a in assignments}
+        assigned_subtask_ids = {ast.sub_task_id for a in assignments for ast in a.sub_tasks}
+        assign_form.emergency_id.data = int(selected_emergency_id)
+
+    if request.method == 'POST' and selected_emergency_id not in (None, '', 'None'):
+        # Remove all current assignments for this emergency
+        AssignmentSubTask.query.filter(AssignmentSubTask.assignment_checklist_id.in_([
+            a.id for a in AssignmentChecklist.query.filter_by(emergency_id=selected_emergency_id)
+        ])).delete(synchronize_session=False)
+        AssignmentChecklist.query.filter_by(emergency_id=selected_emergency_id).delete(synchronize_session=False)
+        db.session.commit()
+        # Add new assignments
+        selected_tasks = request.form.getlist('tasks')
+        for checklist_id in selected_tasks:
+            ac = AssignmentChecklist(emergency_id=selected_emergency_id, checklist_id=checklist_id, task_completed=False)
+            db.session.add(ac)
+            db.session.flush()
+            subtask_ids = request.form.getlist(f'subtasks_{checklist_id}')
+            for subtask_id in subtask_ids:
+                ast = AssignmentSubTask(assignment_checklist_id=ac.id, sub_task_id=subtask_id, task_completed=False)
+                db.session.add(ast)
+        db.session.commit()
+        flash('Emergency checklist assignments updated.', 'success')
+        return redirect(url_for('main.update_emergency_checklist', emergency_id=selected_emergency_id))
+
+    return render_template('admin_manage_checklist.html', checklists=checklists, subtask_forms=subtask_forms, active_emergencies=active_emergencies, assign_form=assign_form, assignment_checklists=[], assigned_task_ids=assigned_task_ids, assigned_subtask_ids=assigned_subtask_ids, active_tab='emergency-checklist')
 

@@ -485,6 +485,9 @@ class Checklist(db.Model):
 	created_at = db.Column(db.DateTime, server_default=func.now())
 	updated_at = db.Column(db.DateTime, onupdate=func.now())
 
+	sub_tasks = db.relationship('SubTask', back_populates='checklist', cascade="all, delete-orphan")
+
+
 class AssignmentChecklist(db.Model):
 	__tablename__ = 'assignment_checklist'
 
@@ -494,5 +497,33 @@ class AssignmentChecklist(db.Model):
 	task_completed = db.Column(db.Boolean)
 	task_completed_date = db.Column(db.DateTime, nullable=True)
 	created_at = db.Column(db.DateTime, server_default=func.now())
-	updated_at = db.Column(db.DateTime, onupdate=func.now())	
+	updated_at = db.Column(db.DateTime, onupdate=func.now())
+	emergency = db.relationship('Emergency', backref='assignment_checklists')
+	checklist = db.relationship('Checklist', backref='assignment_checklists')
+	sub_tasks = db.relationship('AssignmentSubTask', back_populates='assignment_checklist')	
 	
+class SubTask(db.Model):
+    __tablename__ = 'sub_task'
+    id = db.Column(db.Integer, primary_key=True)
+    checklist_id = db.Column(db.Integer, db.ForeignKey('checklist.id'), nullable=False)
+    name = db.Column(db.String, nullable=False)
+    description = db.Column(db.String)
+    task_url = db.Column(db.String)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime)
+
+    checklist = db.relationship("Checklist", back_populates="sub_tasks")
+
+class AssignmentSubTask(db.Model):
+    __tablename__ = 'assignment_sub_task'
+    id = db.Column(db.Integer, primary_key=True)
+    assignment_checklist_id = db.Column(db.Integer, db.ForeignKey('assignment_checklist.id'), nullable=False)
+    sub_task_id = db.Column(db.Integer, db.ForeignKey('sub_task.id'), nullable=False)
+    task_completed = db.Column(db.Boolean, default=False)
+    task_completed_date = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime)
+
+    sub_task = db.relationship("SubTask")
+    assignment_checklist = db.relationship("AssignmentChecklist", back_populates="sub_tasks")
+

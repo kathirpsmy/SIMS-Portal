@@ -3,7 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from wtforms import StringField, SubmitField, BooleanField, IntegerField, DateField, DateTimeField, SelectField, SelectMultipleField, HiddenField, FileField, TextAreaField
 from wtforms.widgets import TextArea
 from wtforms_sqlalchemy.fields import QuerySelectField
-from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError
+from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional, URL
 from flask_wtf.file import FileField, FileAllowed
 from wtforms.widgets import HiddenInput
 from SIMS_Portal import db
@@ -77,3 +77,25 @@ class UpdateEmergenyChecklistForm(FlaskForm):
 	task_completed = BooleanField('Task Completed', default=False, widget=HiddenInput())
 	complted_at = DateTimeField('Completed At', format='%Y-%m-%d', default=datetime.now)
 	submit = SubmitField('Mark Complete')	
+
+class SubTaskForm(FlaskForm):
+    name = StringField('Sub-Task Name', validators=[DataRequired()])
+    description = StringField('Description', validators=[Optional()])
+    task_url = StringField('URL', validators=[Optional(), URL(require_tld=False, message='Invalid URL')])
+
+class EditChecklistForm(FlaskForm):
+    task_name = StringField('Task Name', validators=[DataRequired()])
+    task_description = StringField('Description', validators=[Optional()])
+    task_url = StringField('URL', validators=[Optional(), URL(require_tld=False, message='Invalid URL')])
+    submit = SubmitField('Save')
+
+class EditSubTaskForm(FlaskForm):
+    name = StringField('Sub-Task Name', validators=[DataRequired()])
+    description = StringField('Description', validators=[Optional()])
+    task_url = StringField('URL', validators=[Optional(), URL(require_tld=False, message='Invalid URL')])
+    submit = SubmitField('Save')
+
+class AssignChecklistToEmergencyForm(FlaskForm):
+    emergency_id = SelectField('Select Emergency', coerce=int, validators=[DataRequired()])
+    # tasks and subtasks will be handled in the template as checkboxes
+    submit = SubmitField('Assign Checklist to Emergency')
