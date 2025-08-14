@@ -1,5 +1,10 @@
 {% extends "layout.html" %}
 {% block content %}
+<style>
+.btn-danger, .btn-danger:visited, .btn-danger:active {
+    color: #fff !important;
+}
+</style>
 <div class="container">
     <div id="hideMe">
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -145,7 +150,7 @@
                                 <td>
                                     <div class="d-flex gap-2">
                                         <a href="{{ url_for('main.edit_checklist', id=checklist.id) }}" class="btn btn-sm btn-warning">Edit</a>
-                                        <a href="{{ url_for('main.remove_checklist', id=checklist.id) }}" class="btn btn-sm btn-danger text-white">Remove</a>
+                                        <a href="{{ url_for('main.remove_checklist', id=checklist.id) }}" class="btn btn-sm btn-danger">Remove</a>
                                     </div>
                                 </td>
                             </tr>

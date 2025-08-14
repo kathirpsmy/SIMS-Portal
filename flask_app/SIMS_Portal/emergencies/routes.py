@@ -332,25 +332,36 @@ def view_emergency(id):
 	# convert task_counts to dict
 	task_counts_dict = {github: count for github, count in task_counts}
 
-	assignmet_checklist = (
-		db.session.query(AssignmentChecklist, Checklist)
-		.select_from(AssignmentChecklist)
-		.join(Checklist, Checklist.id == AssignmentChecklist.checklist_id)
-		.filter(AssignmentChecklist.emergency_id == id)
-		.order_by(AssignmentChecklist.id.asc())
-		.add_columns(
-			AssignmentChecklist.id.label("id"),
-			AssignmentChecklist.emergency_id.label("emergency_id"),
-			AssignmentChecklist.checklist_id.label("checklist_id"),
-			AssignmentChecklist.task_completed.label("task_completed"),
-			AssignmentChecklist.created_at.label("created_at"),
-			AssignmentChecklist.updated_at.label("updated_at"),
-			Checklist.task_name.label("checklist_task_name"),
-			Checklist.task_description.label("checklist_task_description"),
-			Checklist.task_url.label("checklist_task_url"),
-		)
-		.all()
-	)
+	# Build assignment checklist with sub-tasks for template
+	from SIMS_Portal.models import AssignmentChecklist, AssignmentSubTask, Checklist, SubTask
+	assignment_checklists = AssignmentChecklist.query.filter_by(emergency_id=id).order_by(AssignmentChecklist.id.asc()).all()
+	assignment_checklist_data = []
+	for ac in assignment_checklists:
+		checklist = Checklist.query.get(ac.checklist_id)
+		sub_tasks = []
+		assignment_subtasks = AssignmentSubTask.query.filter_by(assignment_checklist_id=ac.id).all()
+		for ast in assignment_subtasks:
+			sub_checklist = SubTask.query.get(ast.sub_task_id)
+			sub_tasks.append({
+				'id': ast.sub_task_id,
+				'name': sub_checklist.name if sub_checklist else '',
+				'description': sub_checklist.description if sub_checklist else '',
+				'task_url': sub_checklist.task_url if sub_checklist else '',
+				'task_completed': ast.task_completed,
+				'task_completed_date': ast.task_completed_date,
+			})
+		assignment_checklist_data.append({
+			'id': ac.id,
+			'emergency_id': ac.emergency_id,
+			'checklist_id': ac.checklist_id,
+			'task_completed': ac.task_completed,
+			'created_at': ac.created_at,
+			'updated_at': ac.updated_at,
+			'checklist_task_name': checklist.task_name if checklist else '',
+			'checklist_task_description': checklist.task_description if checklist else '',
+			'checklist_task_url': checklist.task_url if checklist else '',
+			'sub_tasks': sub_tasks,
+		})
 
 	tasks = db.session.query(Checklist).order_by(Checklist.id.asc()).all()
 	
@@ -389,10 +400,11 @@ def view_emergency(id):
 		show_slack_modal=show_slack_modal,
 		task_counts_dict=task_counts_dict,
 		issues_list=issues_list,
-		assignmet_checklist=assignmet_checklist,
+		assignmet_checklist=assignment_checklist_data,
 		tasks=tasks,
 		current_date=datetime.today().strftime('%Y-%m-%d'),
 		chk_form=UpdateEmergenyChecklistForm(),
+		datetime=datetime
 	)
 
 @emergencies.route('/emergency/manage_checklist/update/task/<int:emergency_id>/<int:task_id>', methods=['POST'])
@@ -604,3 +616,48 @@ def api_get_emergencies():
 		})
 
 	return jsonify(result)
+
+@emergencies.route('/emergency/manage_checklist/update/subtask/<int:emergency_id>/<int:assignment_checklist_id>/<int:subtask_id>', methods=['POST'])
+@login_required
+def update_subtask_from_emergency(emergency_id, assignment_checklist_id, subtask_id):
+    from SIMS_Portal.models import AssignmentSubTask, AssignmentChecklist
+    from flask import request
+    from datetime import datetime
+
+    # Get the AssignmentSubTask record
+    ast = AssignmentSubTask.query.filter_by(
+        assignment_checklist_id=assignment_checklist_id,
+        sub_task_id=subtask_id
+    ).first()
+    if not ast:
+        flash('Sub-task not found.', 'danger')
+        return redirect(url_for('emergencies.view_emergency', id=emergency_id))
+
+    # Only allow edit if not completed or user is admin
+    if ast.task_completed and not current_user.is_admin:
+        flash('You cannot edit a completed sub-task.', 'warning')
+        return redirect(url_for('emergencies.view_emergency', id=emergency_id))
+
+    # Get form data
+    completed = bool(request.form.get('task_completed'))
+    completed_at = request.form.get('completed_at')
+    if completed:
+        ast.task_completed = True
+        ast.task_completed_date = completed_at or datetime.now()
+    else:
+        ast.task_completed = False
+        ast.task_completed_date = None
+    ast.updated_at = datetime.now()
+    db.session.commit()
+
+    # Check if all sub-tasks for this checklist are complete
+    all_subtasks = AssignmentSubTask.query.filter_by(assignment_checklist_id=assignment_checklist_id).all()
+    all_complete = all(s.task_completed for s in all_subtasks)
+    parent = AssignmentChecklist.query.get(assignment_checklist_id)
+    if parent:
+        parent.task_completed = all_complete
+        parent.updated_at = datetime.now()
+        db.session.commit()
+
+    flash('Sub-task updated successfully.', 'success')
+    return redirect(url_for('emergencies.view_emergency', id=emergency_id))
