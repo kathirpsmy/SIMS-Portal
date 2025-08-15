@@ -271,12 +271,14 @@
                   <input type="checkbox" class="form-check-input subtask-checkbox me-2" 
                          name="task_completed" value="1" 
                          id="subtask-{{ subtask.id }}" {% if subtask.task_completed %}checked disabled{% endif %}>
-                  <label for="subtask-{{ subtask.id }}" class="mb-0">
-                    <small>{{ subtask.name }}</small>
-                    {% if subtask.task_completed and subtask.completed_date %}
-                      <span class="text-muted">({{ subtask.completed_date.strftime('%Y-%m-%d') }})</span>
-                    {% endif %}
-                  </label>
+				<label for="subtask-{{ subtask.id }}" class="mb-0">
+					<small>
+						{{ subtask.name }}
+						{% if subtask.task_completed and subtask.task_completed_date %}
+							<span class="text-muted">({{ subtask.task_completed_date.strftime('%Y-%m-%d') }})</span>
+						{% endif %}
+					</small>
+				</label>
                 </div>
                 {% if not subtask.task_completed %}
                 <div class="subtask-complete-controls">
