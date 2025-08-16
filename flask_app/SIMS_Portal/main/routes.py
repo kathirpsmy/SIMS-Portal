@@ -650,34 +650,20 @@ def download_file(name):
 
 @main.route('/static/<path:filename>')
 def static_files(filename):
-	"""route to handle caching of static files"""
-	cache_timeout = 3600 
-	
-	return send_from_directory(app.config['STATIC_FOLDER'], filename, cache_timeout=cache_timeout)
+    """route to handle caching of static files"""
+    cache_timeout = 3600 
+    
+    return send_from_directory(current_app.config['STATIC_FOLDER'], filename, cache_timeout=cache_timeout)
 	
 @main.route('/staging')
 def staging():
-	if current_user.is_admin == 1:
-		get_issues('2024-bra-floods')
-
-		
-		return render_template('visualization.html')
-	else:
-		current_app.logger.warning('User-{}, a non-administrator, tried to access the staging area'.format(current_user.id))
-		list_of_admins = db.session.query(User).filter(User.is_admin == 1).all()
-		return render_template('errors/403.html', list_of_admins=list_of_admins), 403
-
-def render_admin_checklist_management(active_tab = ''):
-	form = NewChecklistForm()
-	chk_form = UpdateEmergenyChecklistForm()
-	
-	tasks = db.session.query(Checklist).order_by(Checklist.id.asc()).all()
-
-	active_emergencies = db.session.query(Emergency.id, Emergency.emergency_name).filter(Emergency.emergency_status == 'Active').all()
-
-	assignment_checklists = db.session.query(AssignmentChecklist).all()
-
-	return render_template('admin_manage_checklist.html', form=form, tasks=tasks, assignment_checklists=assignment_checklists, active_emergencies=active_emergencies, active_tab=active_tab, chk_form=chk_form)
+    if current_user.is_admin == 1:
+        get_issues('2024-bra-floods')
+        return render_template('visualization.html')
+    else:
+        current_app.logger.warning('User-{}, a non-administrator, tried to access the staging area'.format(current_user.id))
+        list_of_admins = db.session.query(User).filter(User.is_admin == 1).all()
+        return render_template('errors/403.html', list_of_admins=list_of_admins), 403
 
 @main.route('/admin/manage_checklist', methods=['GET', 'POST'])
 @login_required
@@ -689,6 +675,7 @@ def manage_checklist():
     active_emergencies = Emergency.query.filter(Emergency.emergency_status == 'Active').all()
     assign_form = AssignChecklistToEmergencyForm()
     assign_form.emergency_id.choices = [(e.id, e.emergency_name) for e in active_emergencies]
+    new_checklist_form = NewChecklistForm()
 
     # For emergency checklist tab, show assignments for selected emergency
     selected_emergency_id = request.args.get('emergency_id')
@@ -700,7 +687,20 @@ def manage_checklist():
         assigned_subtask_ids = {ast.sub_task_id for a in assignments for ast in a.sub_tasks}
         assign_form.emergency_id.data = int(selected_emergency_id)
 
-    return render_template('admin_manage_checklist.html', checklists=checklists, subtask_forms=subtask_forms, active_emergencies=active_emergencies, assign_form=assign_form, assignment_checklists=[], assigned_task_ids=assigned_task_ids, assigned_subtask_ids=assigned_subtask_ids, active_tab=request.args.get('active_tab', ''))
+    # Add context for task report tab
+    emergency_task_stats = {e.id: get_emergency_task_stats(e.id) for e in active_emergencies}
+    
+    return render_template('admin_manage_checklist.html', 
+        checklists=checklists, 
+        subtask_forms=subtask_forms, 
+        active_emergencies=active_emergencies, 
+        assign_form=assign_form, 
+        assignment_checklists=[], 
+        assigned_task_ids=assigned_task_ids, 
+        assigned_subtask_ids=assigned_subtask_ids, 
+        active_tab=request.args.get('active_tab', ''), 
+        new_checklist_form=new_checklist_form,
+        get_emergency_task_stats=get_emergency_task_stats)
 
 @main.route('/admin/manage_checklist/add_subtask/<int:checklist_id>', methods=['POST'])
 @login_required
@@ -737,6 +737,22 @@ def edit_checklist(id):
         flash('Checklist updated successfully.', 'success')
         return redirect(url_for('main.manage_checklist'))
     return render_template('edit_checklist.html', checklist=checklist, form=form)
+
+# New method to add new checklist
+@main.route('/admin/manage_checklist/add', methods=['POST'])
+@login_required
+def add_checklist():
+	from SIMS_Portal.models import Checklist
+	from SIMS_Portal.main.forms import NewChecklistForm
+	form = NewChecklistForm()
+	if form.validate_on_submit():
+		new_checklist = Checklist(task_name=form.task_name.data, task_description=form.task_description.data, task_url=form.task_url.data)
+		db.session.add(new_checklist)
+		db.session.commit()
+		flash('New checklist added successfully.', 'success')
+	else:
+		flash('Error adding checklist. Please check your input.', 'danger')
+	return redirect(url_for('main.manage_checklist'))
 
 @main.route('/admin/manage_checklist/remove/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -861,9 +877,60 @@ def delete_assigned_subtask(assigned_subtask_id):
     flash('Assigned sub-task deleted successfully.', 'success')
     return redirect(url_for('main.manage_checklist', active_tab='emergency-checklist'))
 
+@main.route('/admin/manage_checklist/update_task_status/<int:assignment_id>', methods=['POST'])
+@login_required
+def update_task_status(assignment_id):
+    """Update the completion status and date of a task"""
+    if not current_user.is_admin:
+        abort(403)
+        
+    from SIMS_Portal.models import AssignmentChecklist
+    assignment = AssignmentChecklist.query.get_or_404(assignment_id)
+    
+    completed_date = request.form.get('completed_date')
+    if completed_date:
+        assignment.task_completed = True
+        assignment.task_completed_date = datetime.strptime(completed_date, '%Y-%m-%dT%H:%M')
+    else:
+        assignment.task_completed = False
+        assignment.task_completed_date = None
+        
+    db.session.commit()
+    flash('Task status updated successfully', 'success')
+    return redirect(url_for('main.update_emergency_checklist', emergency_id=assignment.emergency_id))
+
+def get_emergency_task_stats(emergency_id):
+    """Get task statistics for an emergency"""
+    from SIMS_Portal.models import AssignmentChecklist, AssignmentSubTask
+    
+    # Get all assignments for this emergency
+    assignments = AssignmentChecklist.query.filter_by(emergency_id=emergency_id).all()
+    
+    total_tasks = len(assignments)
+    completed_tasks = len([a for a in assignments if a.task_completed])
+    total_subtasks = sum(len(a.sub_tasks) for a in assignments)
+    completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+    
+    last_update = None
+    if assignments:
+        last_updates = [a.updated_at for a in assignments if a.updated_at]
+        if last_updates:
+            last_update = max(last_updates)
+            
+    return {
+        'total_tasks': total_tasks,
+        'total_subtasks': total_subtasks,
+        'completed_tasks': completed_tasks,
+        'completion_rate': completion_rate,
+        'last_update': last_update
+    }
+
 @main.route('/admin/manage_checklist/update_emergency_checklist', methods=['POST', 'GET'])
 @login_required
 def update_emergency_checklist():
+    if not current_user.is_admin:
+        abort(403)
+
     from SIMS_Portal.models import AssignmentChecklist, AssignmentSubTask, Emergency, Checklist, SubTask
     from SIMS_Portal.main.forms import AssignChecklistToEmergencyForm, SubTaskForm
     checklists = Checklist.query.order_by(Checklist.id).all()
@@ -871,6 +938,7 @@ def update_emergency_checklist():
     active_emergencies = Emergency.query.filter(Emergency.emergency_status == 'Active').all()
     assign_form = AssignChecklistToEmergencyForm()
     assign_form.emergency_id.choices = [(e.id, e.emergency_name) for e in active_emergencies]
+    new_checklist_form = NewChecklistForm()
 
     # Get selected emergency (do not default to any)
     selected_emergency_id = request.values.get('emergency_id')
@@ -905,5 +973,5 @@ def update_emergency_checklist():
         flash('Emergency checklist assignments updated.', 'success')
         return redirect(url_for('main.update_emergency_checklist', emergency_id=selected_emergency_id))
 
-    return render_template('admin_manage_checklist.html', checklists=checklists, subtask_forms=subtask_forms, active_emergencies=active_emergencies, assign_form=assign_form, assignment_checklists=[], assigned_task_ids=assigned_task_ids, assigned_subtask_ids=assigned_subtask_ids, active_tab='emergency-checklist')
+    return render_template('admin_manage_checklist.html', checklists=checklists, subtask_forms=subtask_forms, active_emergencies=active_emergencies, assign_form=assign_form, assignment_checklists=[], assigned_task_ids=assigned_task_ids, assigned_subtask_ids=assigned_subtask_ids, active_tab='emergency-checklist', new_checklist_form=new_checklist_form, get_emergency_task_stats=get_emergency_task_stats)
 
