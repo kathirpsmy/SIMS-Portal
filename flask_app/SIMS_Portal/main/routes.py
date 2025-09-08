@@ -46,7 +46,7 @@ from SIMS_Portal.main.utils import (
 )
 from SIMS_Portal.users.forms import AssignProfileTypesForm, RegionalFocalPointForm
 from SIMS_Portal.users.utils import (
-	send_slack_dm, new_surge_alert, send_reset_slack, update_member_locations, 
+	send_slack_dm, new_surge_alert, send_reset_slack, update_member_locations,
 	bulk_slack_photo_update, process_inactive_members, audit_inactive_members, process_inactive_members, alert_inactive_members
 )
 from SIMS_Portal.alerts.utils import (
@@ -63,11 +63,11 @@ from SIMS_Portal.tasks.utils import get_issues, refresh_all_active_githubs
 
 main = Blueprint('main', __name__)
 
-@main.route('/') 
-def index(): 
+@main.route('/')
+def index():
 	latest_stories = db.session.query(Story, Emergency).join(Emergency, Emergency.id == Story.emergency_id).order_by(Story.id.desc()).limit(3).all()
 	return render_template('index.html', latest_stories=latest_stories)
-	
+
 @main.route('/about')
 def about():
 	count_activations = db.session.query(Emergency).count()
@@ -89,10 +89,10 @@ def get_slack_id():
 def badges():
 	assigned_badges = db.engine.execute("SELECT name, badge.id as id, description, badge_url, limited_edition, count(user_badge.user_id) as count FROM badge LEFT JOIN user_badge ON user_badge.badge_id = badge.id WHERE limited_edition = false GROUP BY name, badge.id, description, limited_edition ORDER BY name")
 	all_badges = db.session.query(Badge).all()
-	
+
 	all_limited_edition_badges = db.session.query(Badge).filter(Badge.limited_edition == True).all()
 	count_active_members = db.session.query(User).filter(User.status == 'Active').count()
-	
+
 	list_assigned_badges = []
 	for badge in assigned_badges:
 		temp_dict = {}
@@ -103,7 +103,7 @@ def badges():
 		temp_dict['description'] = badge.description
 		temp_dict['limited_edition'] = badge.limited_edition
 		list_assigned_badges.append(temp_dict)
-	
+
 	return render_template('badges.html', count_active_members=count_active_members, all_badges=all_badges, list_assigned_badges=list_assigned_badges, all_limited_edition_badges=all_limited_edition_badges)
 
 @main.route('/badges/create', methods=['GET', 'POST'])
@@ -131,7 +131,7 @@ def send_manual_slack_message():
 	message_form = ManualSlackMessage()
 	if request.method == 'GET' and current_user.is_admin == 1:
 		return render_template('admin_send_slack_message.html', message_form=message_form)
-	
+
 	if request.method == 'POST' and current_user.is_admin == 1:
 		if message_form.validate_on_submit():
 			message = message_form.message.data
@@ -145,7 +145,7 @@ def send_manual_slack_message():
 				flash('Please select a valid user.', 'danger')
 		else:
 			flash('Invalid form. Please check your inputs.', 'danger')
-	
+
 	return render_template('admin_send_slack_message.html', message_form=message_form)
 
 @main.route('/admin/manage_profiles', methods=['GET', 'POST'])
@@ -155,31 +155,31 @@ def admin_manage_profiles():
 	if request.method == 'GET' and current_user.is_admin == 1:
 		all_assigned_profiles = db.engine.execute('SELECT user_id, firstname || \' \' || lastname as user_name, profile_id, max(tier) as max_tier, name FROM user_profile JOIN profile ON profile.id = user_profile.profile_id JOIN "user" ON "user".id = user_profile.user_id WHERE "user".status = \'Active\' GROUP BY user_id, profile_id, firstname, lastname, name ORDER BY user_name')
 		return render_template('admin_profiles.html', profile_form=profile_form, all_assigned_profiles=all_assigned_profiles)
-		
+
 	# assign profile to user
 	elif request.method == 'POST' and profile_form.user_name.data and current_user.is_admin == 1:
-		
+
 		user_id = profile_form.user_name.data.id
 		try:
 			profile_id = profile_form.profiles.data.id
 		except:
 			flash('A profile is required.', 'danger')
 			return redirect(url_for('main.admin_manage_profiles'))
-		tier = profile_form.tier.data 
+		tier = profile_form.tier.data
 		requested_profile_code = str(user_id) + str(profile_id) + str(tier)
-		
+
 		if tier == '':
 			flash('A tier is required.', 'danger')
 			return redirect(url_for('main.admin_manage_profiles'))
-		
+
 		# get the user's existing profiles and tiers, generate unique code that concats all three elements
 		users_existing_profiles = db.engine.execute("SELECT user_id, profile_id, tier, CONCAT(user_id, profile_id, tier) AS unique_code FROM user_profile WHERE user_id = {}".format(user_id))
-		
+
 		# iterate over SQL object to extract unique_code
 		list_to_check = []
 		for unique_code in users_existing_profiles:
 			list_to_check.append(unique_code.unique_code)
-		
+
 		if requested_profile_code in list_to_check:
 			flash('User already has that profile at that tier.', 'danger')
 			return redirect(url_for('main.admin_manage_profiles'))
@@ -193,11 +193,11 @@ def admin_manage_profiles():
 @login_required
 def admin_assign_badge():
 	badge_form = BadgeAssignmentForm()
-	
+
 	if request.method == 'GET' and current_user.is_admin == 1:
 		assigned_badges = db.engine.execute('SELECT u.id, u.firstname, u.lastname, string_agg(b.name, \', \') as badges FROM "user" u JOIN user_badge ub ON ub.user_id = u.id JOIN badge b ON b.id = ub.badge_id WHERE u.status = \'Active\' GROUP BY u.id ORDER BY u.firstname')
 		return render_template('admin_assign_badge.html', assigned_badges=assigned_badges, badge_form=badge_form)
-		
+
 	if request.method == 'POST' and badge_form.submit_badge.data and current_user.is_admin == True:
 		if badge_form.validate_on_submit():
 			user_id = badge_form.user_name.data.id
@@ -206,16 +206,16 @@ def admin_assign_badge():
 		else:
 			flash('Please fill out all badge assignment fields.', 'danger')
 			return redirect(url_for('main.admin_assign_badge'))
-		
+
 		# get list of assigned badges, create column that concats user_id and badge_id to create unique identifier
 		badge_ids = db.engine.execute("SELECT CAST(user_id AS text) || CAST(badge_id AS text) as unique_code FROM user_badge WHERE user_id = {}".format(user_id))
-		
+
 		list_to_check = []
 		for id in badge_ids:
 			list_to_check.append(id[0])
-		
+
 		attempted_user_badge_code = str(user_id) + str(badge_id)
-		
+
 		# check list against the values we're trying to save, and proceed if user doesn't already have that badge
 		if attempted_user_badge_code not in list_to_check:
 			return redirect(url_for('main.badge_assignment', user_id=user_id, badge_id=badge_id))
@@ -228,11 +228,11 @@ def admin_assign_badge():
 @login_required
 def admin_upload_badges():
 	badge_upload_form = NewBadgeUploadForm()
-	
+
 	if request.method == 'GET' and current_user.is_admin == 1:
 		assigned_badges = db.engine.execute('SELECT u.id, u.firstname, u.lastname, string_agg(b.name, \', \') as badges FROM "user" u JOIN user_badge ub ON ub.user_id = u.id JOIN badge b ON b.id = ub.badge_id WHERE u.status = \'Active\' GROUP BY u.id ORDER BY u.firstname')
 		return render_template('admin_upload_badge.html', badge_upload_form=badge_upload_form)
-	
+
 	elif request.method == 'POST' and badge_upload_form.name.data and current_user.is_admin == 1:
 		if badge_upload_form.limited_edition.data == True:
 			is_limited_edition = 1
@@ -240,8 +240,8 @@ def admin_upload_badges():
 			is_limited_edition = 0
 		file = save_new_badge(badge_upload_form.file.data, badge_upload_form.name.data)
 		badge = Badge(
-			name = badge_upload_form.name.data.title(), 
-			badge_url = file, 
+			name = badge_upload_form.name.data.title(),
+			badge_url = file,
 			limited_edition = is_limited_edition,
 			description = badge_upload_form.description.data
 		)
@@ -255,25 +255,25 @@ def admin_upload_badges():
 @login_required
 def admin_approve_members():
 	pending_users = db.session.query(User, NationalSociety).join(NationalSociety, NationalSociety.ns_go_id == User.ns_id).filter(User.status=='Pending').all()
-	
+
 	return render_template('admin_approve_members.html', pending_users=pending_users)
 
 @main.route('/admin/process_reviews')
 @login_required
 def admin_process_reviews():
 	open_reviews = db.session.query(Review, Emergency).join(Emergency, Emergency.id == Review.emergency_id).filter(Review.status == 'Open').all()
-	
+
 	return render_template('admin_process_reviews.html', open_reviews=open_reviews)
-	
+
 @main.route('/admin/edit_skills', methods=['GET', 'POST'])
 @login_required
 def admin_edit_skills():
 	skill_form = SkillCreatorForm()
-	
+
 	if request.method == 'GET' and current_user.is_admin == 1:
 		all_skills = db.session.query(Skill.name, Skill.category).order_by(Skill.category, Skill.name).all()
 		return render_template('admin_edit_skills.html', skill_form=skill_form, all_skills=all_skills)
-	
+
 	if request.method == 'POST' and skill_form.submit_skill.data and current_user.is_admin == 1:
 		new_skill = Skill(
 			name = skill_form.name.data,
@@ -281,21 +281,21 @@ def admin_edit_skills():
 		)
 		db.session.add(new_skill)
 		db.session.commit()
-		
+
 		log_message = f"[INFO] A new skill has been added to the Portal: {new_skill.name}."
 		new_log = Log(message=log_message, user_id=current_user.id)
 		db.session.add(new_log)
 		db.session.commit()
-		
+
 		flash("New Skill Created.", "success")
 		return redirect(url_for('main.admin_edit_skills'))
 
 @main.route('/admin/process_acronyms', methods=['GET', 'POST'])
 @login_required
-def admin_process_acronyms(): 
+def admin_process_acronyms():
 	# anonymous submissions are attributed to user 63 (Clara Barton)
 	pending_acronyms = db.session.query(Acronym).filter(Acronym.approved_by.is_(None), Acronym.added_by == 63)
-	
+
 	return render_template('admin_process_acronyms.html', pending_acronyms=pending_acronyms)
 
 @main.route('/admin/view_logs', methods=['GET', 'POST'])
@@ -303,17 +303,17 @@ def admin_process_acronyms():
 def view_logs():
 	if current_user.is_admin == 1:
 		logs = db.session.query(Log, User).outerjoin(User, User.id == Log.user_id).order_by(desc(Log.timestamp)).limit(1000).all()
-		
+
 		for log, user in logs:
 			match = re.search(r'\[(\w+)\]', log.message)
 			if match:
-				log.severity = match.group(1) 
+				log.severity = match.group(1)
 				log.message = log.message.replace(match.group(0), '')
 
 		return render_template('admin_logs.html', logs=logs)
 	else:
 		abort(403)
-	
+
 @main.route('/admin/assign_regional_focal_point', methods=['GET', 'POST'])
 @login_required
 def assign_regional_focal_point():
@@ -360,7 +360,7 @@ def badge_assignment(user_id, badge_id):
 		new_badge = user_badge.insert().values(user_id=user_id, badge_id=badge_id, assigner_id=current_user.id, assigner_justify=session.get('assigner_justify', None))
 		db.session.execute(new_badge)
 		db.session.commit()
-		
+
 		# try sending slack message alerting user to the new badge
 		try:
 			user_info = db.session.query(User).filter(User.id == user_id).first()
@@ -410,18 +410,18 @@ def badge_assignment_via_SIMSCO(user_id, badge_id, assigner_id, dis_id):
 @login_required
 def badge_assignment_sims_co(dis_id):
 	badge_form = BadgeAssignmentViaSIMSCoForm()
-	
+
 	event_name = db.session.query(Emergency).filter(Emergency.id == dis_id).first()
-	
+
 	assigned_badges = db.engine.execute("SELECT u.id, u.firstname, u.lastname, string_agg(b.name, ', ') as badges FROM public.user u JOIN user_badge ub ON ub.user_id = u.id JOIN badge b ON b.id = ub.badge_id JOIN assignment a ON a.user_id = u.id JOIN emergency e ON e.id = a.emergency_id WHERE u.status = 'Active' AND e.id = {} AND a.role = 'Remote IM Support' AND a.assignment_status = 'Active' GROUP BY u.id ORDER BY u.firstname".format(dis_id))
-	
+
 	assigned_members = db.session.query(Emergency, Assignment, User).join(Assignment, Assignment.emergency_id == Emergency.id).join(User, User.id == Assignment.user_id).filter(Emergency.id == dis_id).all()
-	
+
 	# generate list of user IDs of users listed as SIMS Remote Coordinators on emergency
 	sims_co_ids = db.session.query(User, Assignment, Emergency).join(Assignment, Assignment.user_id == User.id).join(Emergency, Emergency.id == Assignment.emergency_id).filter(Emergency.id == dis_id, Assignment.role == 'SIMS Remote Coordinator').all()
-	
+
 	user_is_sims_co = check_sims_co(dis_id)
-	
+
 	if request.method == 'GET' and user_is_sims_co == True:
 		query = User.query.join(Assignment, Assignment.user_id == User.id).join(Emergency, Emergency.id == Assignment.emergency_id).filter(Emergency.id == dis_id, Assignment.role == 'Remote IM Support', Assignment.assignment_status == 'Active')
 		badge_form.user_name.query = query
@@ -431,13 +431,13 @@ def badge_assignment_sims_co(dis_id):
 		badge_id = badge_form.badge_name.data.id
 		# use flask session to pass 'assigner_justify' field data without passing through URL
 		session['assigner_justify'] = badge_form.assigner_justify.data
-		
+
 		# get all badges assigned to the user which sims co is trying to assign
 		users_badges = db.engine.execute('SELECT u.id, user_badge.user_id, user_badge.badge_id FROM public.user u JOIN user_badge ON user_badge.user_id = u.id WHERE u.id = {}'.format(user_id))
 		users_badges_ids = []
 		for badge in users_badges:
 			users_badges_ids.append(badge.badge_id)
-		
+
 		if badge_form.validate_on_submit():
 			# check that user does not already have the badge
 			if badge_id not in users_badges_ids:
@@ -472,67 +472,67 @@ def resources_slack_channels():
 @login_required
 def dashboard():
 	active_emergencies = db.session.query(Emergency, NationalSociety, EmergencyType).join(NationalSociety, NationalSociety.ns_go_id == Emergency.emergency_location_id).join(EmergencyType, EmergencyType.emergency_type_go_id == Emergency.emergency_type_id).filter(Emergency.emergency_status == 'Active').all()
-	
+
 	count_active_emergencies = db.session.query(Emergency, NationalSociety, EmergencyType).join(NationalSociety, NationalSociety.ns_go_id == Emergency.emergency_location_id).join(EmergencyType, EmergencyType.emergency_type_go_id == Emergency.emergency_type_id).filter(Emergency.emergency_status == 'Active').count()
-	
+
 	regional_im_leads = db.session.query(RegionalFocalPoint, Region, User).join(Region, Region.id == RegionalFocalPoint.regional_id).join(User, User.id == RegionalFocalPoint.focal_point_id).all()
-	
+
 	todays_date = datetime.today()
-	
+
 	assignments_by_emergency = db.session.query(Emergency.emergency_name, func.count()).\
 	join(Assignment, Assignment.emergency_id == Emergency.id).\
 	filter(Assignment.assignment_status != 'Removed').\
 	group_by(Emergency.emergency_name).all()
-	
+
 	data_dict_assignments = [{'emergency_name': name, 'count_assignments': count} for name, count in assignments_by_emergency]
 	labels_for_assignment = [row['emergency_name'] for row in data_dict_assignments]
 	values_for_assignment = [row['count_assignments'] for row in data_dict_assignments]
-	
+
 	pending_user_check = db.session.query(User).filter(User.status == 'Pending').all()
-	
+
 	products_by_emergency = db.session.query(Emergency.emergency_name, func.count()).\
 		join(Portfolio, Portfolio.emergency_id == Emergency.id).\
 		filter(Portfolio.product_status != 'Removed').\
 		group_by(Emergency.emergency_name).all()
-	
+
 	data_dict_products = [{'emergency_name': name, 'count_products': count} for name, count in products_by_emergency]
 	labels_for_product = [row['emergency_name'] for row in data_dict_products]
 	values_for_product = [row['count_products'] for row in data_dict_products]
-	
+
 	count_active_assignments = db.session.query(Assignment, User, Emergency).join(User, User.id==Assignment.user_id).join(Emergency, Emergency.id==Assignment.emergency_id).filter(Assignment.assignment_status=='Active', Assignment.end_date>todays_date).count()
-	
+
 	active_assignments = db.session.query(Assignment, User, Emergency, NationalSociety).join(User, User.id==Assignment.user_id).join(Emergency, Emergency.id==Assignment.emergency_id).join(NationalSociety, NationalSociety.ns_go_id == User.ns_id).filter(Assignment.assignment_status=='Active', Assignment.role != 'Remote IM Support', Assignment.end_date>todays_date).order_by(Emergency.emergency_name, Assignment.end_date).all()
 
 	count_active_remote_supporters = db.session.query(func.count()).select_from(Emergency).join(Assignment).filter(
 		Emergency.emergency_status == 'Active',
 		Assignment.assignment_status != 'Removed'
 	).scalar()
-	
+
 	# filter open alerts to only show last 90 days
 	ninety_days_ago = datetime.now() - timedelta(days=90)
 	count_active_IM_alerts = db.session.query(func.count()).filter(
 		Alert.im_filter == True,
 		Alert.alert_status == 'Open',
-		Alert.alert_record_created_at >= ninety_days_ago, 
+		Alert.alert_record_created_at >= ninety_days_ago,
 		Alert.end_time.isnot(None)
 	).scalar()
-	
+
 	list_active_IM_alerts = db.session.query(Alert).filter(
 		Alert.im_filter == True,
 		Alert.alert_status == 'Open',
 		Alert.alert_record_created_at >= ninety_days_ago,
 		Alert.end_time.isnot(None)
 	).all()
-	
+
 	surge_alerts = db.session.query(Alert).filter(Alert.im_filter == True).all()
-	
+
 	return render_template('dashboard.html', active_assignments=active_assignments, count_active_assignments=count_active_assignments, labels_for_assignment=labels_for_assignment, values_for_assignment=values_for_assignment, labels_for_product=labels_for_product, values_for_product=values_for_product, pending_user_check=pending_user_check, active_emergencies=active_emergencies, count_active_emergencies=count_active_emergencies,surge_alerts=surge_alerts, regional_im_leads=regional_im_leads, count_active_remote_supporters=count_active_remote_supporters, count_active_IM_alerts=count_active_IM_alerts, list_active_IM_alerts=list_active_IM_alerts)
 
 @main.route('/role_profile/<type>')
 def view_role_profile(type):
 	capitalized_type = type.capitalize()
 	users_with_profile = db.engine.execute('SELECT "user".id, firstname, lastname, max(tier) as tier, image_file FROM "user" JOIN user_profile ON "user".id = user_profile.user_id JOIN profile ON profile.id = user_profile.profile_id WHERE image = \'{}\' GROUP BY "user".id'.format(capitalized_type))
-	
+
 	users_with_profile_tier_1 = []
 	users_with_profile_tier_2 = []
 	users_with_profile_tier_3 = []
@@ -546,10 +546,10 @@ def view_role_profile(type):
 			users_with_profile_tier_3.append(user)
 		elif user.tier == 4:
 			users_with_profile_tier_4.append(user)
-	
+
 	count_users_with_profile = db.engine.execute('SELECT count(distinct("user".id)) as count FROM "user" JOIN user_profile ON "user".id = user_profile.user_id JOIN profile ON profile.id = user_profile.profile_id WHERE image = \'{}\''.format(capitalized_type))
 	unpacked_count = [x.count for x in count_users_with_profile][0]
-	
+
 	return render_template('role_profile_{}.html'.format(type), users_with_profile_tier_1=users_with_profile_tier_1, users_with_profile_tier_2=users_with_profile_tier_2, users_with_profile_tier_3=users_with_profile_tier_3, users_with_profile_tier_4=users_with_profile_tier_4, unpacked_count=unpacked_count)
 
 @main.route('/manual_refresh')
@@ -591,47 +591,47 @@ def get_ns_member_location_data():
 	.filter(~NationalSociety.ns_name.like('%IFRC%')) \
 	.order_by(desc('ns_name_count')) \
 	.all()
-	
+
 	location_data = []
 	for row in active_national_societies:
 		location_data.append({
-			"ns_name": row.ns_name,  
-			"ns_name_count": row.ns_name_count 
+			"ns_name": row.ns_name,
+			"ns_name_count": row.ns_name_count
 		})
-	
+
 	return jsonify(location_data)
-	
+
 @main.route('/national_societies/<int:ns_id>')
 @login_required
 def view_national_society(ns_id):
 	ns_info = db.session.query(NationalSociety).filter(NationalSociety.ns_go_id == ns_id).first()
-	
+
 	ns_members = user_info_by_ns(ns_id)
-	
+
 	active_ns_member_count = db.session.query(NationalSociety, User) \
 	.join(User, User.ns_id == NationalSociety.ns_go_id) \
 	.filter(NationalSociety.ns_go_id == ns_id) \
 	.filter(User.status == 'Active') \
 	.count()
-	
+
 	return render_template('national_society_view.html', ns_members=ns_members, ns_info=ns_info, active_ns_member_count=active_ns_member_count)
 
 @main.route('/get_active_emergencies')
 def get_active_emergencies():
 	"""Feeds the dashboard map's active emergency data"""
-	
+
 	emergencies_data = db.session.query(Emergency, NationalSociety)\
 		.join(NationalSociety, NationalSociety.ns_go_id == Emergency.emergency_location_id)\
 		.filter(Emergency.emergency_status == 'Active').all()
-	
+
 	emergencies_list = []
 	for emergency, national_society in emergencies_data:
 		emergency_dict = {
 			'iso3': national_society.iso3,
-			'count': 1,  
+			'count': 1,
 		}
 		emergencies_list.append(emergency_dict)
-	
+
 	return jsonify(emergencies_list)
 
 @main.route('/uploads/<path:name>')
@@ -645,16 +645,16 @@ def download_file(name):
         current_app.logger.error(e)
         abort(404)
     file_stream.seek(0)
-	
+
     return send_file(file_stream, mimetype=s3_object.content_type)
 
 @main.route('/static/<path:filename>')
 def static_files(filename):
     """route to handle caching of static files"""
-    cache_timeout = 3600 
-    
+    cache_timeout = 3600
+
     return send_from_directory(current_app.config['STATIC_FOLDER'], filename, cache_timeout=cache_timeout)
-	
+
 @main.route('/staging')
 def staging():
     if current_user.is_admin == 1:
@@ -689,17 +689,28 @@ def manage_checklist():
 
     # Add context for task report tab
     emergency_task_stats = {e.id: get_emergency_task_stats(e.id) for e in active_emergencies}
-    
-    return render_template('admin_manage_checklist.html', 
-        checklists=checklists, 
-        subtask_forms=subtask_forms, 
-        active_emergencies=active_emergencies, 
-        assign_form=assign_form, 
-        assignment_checklists=[], 
-        assigned_task_ids=assigned_task_ids, 
-        assigned_subtask_ids=assigned_subtask_ids, 
-        active_tab=request.args.get('active_tab', ''), 
+
+    assigned_tasks = AssignmentChecklist.query.filter_by(emergency_id=selected_emergency_id).all()
+    assigned_subtasks = {}
+    for task in assigned_tasks:
+        for subtask in task.sub_tasks:
+            assigned_subtasks[subtask.sub_task_id] = {
+                'task_completed': subtask.task_completed,
+                'date_updated': subtask.task_completed_date if subtask.task_completed else None
+            }
+
+    return render_template('admin_manage_checklist.html',
+        checklists=checklists,
+        subtask_forms=subtask_forms,
+        active_emergencies=active_emergencies,
+        assign_form=assign_form,
+        assignment_checklists=[],
+        assigned_task_ids=assigned_task_ids,
+        assigned_subtask_ids=assigned_subtask_ids,
+        active_tab=request.args.get('active_tab', ''),
         new_checklist_form=new_checklist_form,
+		assigned_subtasks=assigned_subtasks,
+		assigned_tasks=assigned_tasks,
         get_emergency_task_stats=get_emergency_task_stats)
 
 @main.route('/admin/manage_checklist/add_subtask/<int:checklist_id>', methods=['POST'])
@@ -720,7 +731,14 @@ def add_subtask(checklist_id):
     else:
         flash('Error adding sub-task. Please check your input.', 'danger')
         subtask_forms[checklist_id] = form
-        return render_template('admin_manage_checklist.html', checklists=checklists, subtask_forms=subtask_forms, active_emergencies=active_emergencies, active_tab=request.args.get('active_tab', ''))
+        new_checklist_form = NewChecklistForm()
+        return render_template('admin_manage_checklist.html',
+                            checklists=checklists,
+                            subtask_forms=subtask_forms,
+                            active_emergencies=active_emergencies,
+                            active_tab=request.args.get('active_tab', ''),
+                            new_checklist_form=new_checklist_form,
+                            get_emergency_task_stats=get_emergency_task_stats)
 
 @main.route('/admin/manage_checklist/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -819,7 +837,15 @@ def assign_checklist_to_emergency():
     checklists = Checklist.query.order_by(Checklist.id).all()
     subtask_forms = {cl.id: SubTaskForm(prefix=f'subtask_{cl.id}') for cl in checklists}
     active_emergencies = emergencies
-    return render_template('admin_manage_checklist.html', checklists=checklists, subtask_forms=subtask_forms, active_emergencies=active_emergencies, assign_form=form, active_tab='emergency-checklist')
+    new_checklist_form = NewChecklistForm()
+    return render_template('admin_manage_checklist.html',
+                         checklists=checklists,
+                         subtask_forms=subtask_forms,
+                         active_emergencies=active_emergencies,
+                         assign_form=form,
+                         active_tab='emergency-checklist',
+                         new_checklist_form=new_checklist_form,
+                         get_emergency_task_stats=get_emergency_task_stats)
 
 @main.route('/admin/manage_checklist/edit_assigned_checklist/<int:assignment_id>', methods=['GET', 'POST'])
 @login_required
@@ -883,10 +909,10 @@ def update_task_status(assignment_id):
     """Update the completion status and date of a task"""
     if not current_user.is_admin:
         abort(403)
-        
+
     from SIMS_Portal.models import AssignmentChecklist
     assignment = AssignmentChecklist.query.get_or_404(assignment_id)
-    
+
     completed_date = request.form.get('completed_date')
     if completed_date:
         assignment.task_completed = True
@@ -894,29 +920,33 @@ def update_task_status(assignment_id):
     else:
         assignment.task_completed = False
         assignment.task_completed_date = None
-        
+
     db.session.commit()
     flash('Task status updated successfully', 'success')
     return redirect(url_for('main.update_emergency_checklist', emergency_id=assignment.emergency_id))
 
 def get_emergency_task_stats(emergency_id):
     """Get task statistics for an emergency"""
-    from SIMS_Portal.models import AssignmentChecklist, AssignmentSubTask
-    
     # Get all assignments for this emergency
     assignments = AssignmentChecklist.query.filter_by(emergency_id=emergency_id).all()
-    
+
     total_tasks = len(assignments)
-    completed_tasks = len([a for a in assignments if a.task_completed])
+    # Count tasks where all subtasks are completed
+    completed_tasks = len([a for a in assignments if all(st.task_completed for st in a.sub_tasks)])
+    # Sum all subtasks
     total_subtasks = sum(len(a.sub_tasks) for a in assignments)
+    # Calculate completion rate
     completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-    
+
+    # Find the most recent update
     last_update = None
     if assignments:
-        last_updates = [a.updated_at for a in assignments if a.updated_at]
-        if last_updates:
-            last_update = max(last_updates)
-            
+         # Get the latest update from all subtasks
+        all_subtasks = [st for a in assignments for st in a.sub_tasks]
+        completed_dates = [st.task_completed_date for st in all_subtasks if st.task_completed_date]
+        if completed_dates:
+            last_update = max(completed_dates)
+
     return {
         'total_tasks': total_tasks,
         'total_subtasks': total_subtasks,
@@ -925,53 +955,214 @@ def get_emergency_task_stats(emergency_id):
         'last_update': last_update
     }
 
+@main.route('/admin/manage_checklist/unmark_subtask/<int:subtask_id>/<int:emergency_id>', methods=['POST'])
+@login_required
+def unmark_subtask(subtask_id, emergency_id):
+    """Unmark a subtask as completed"""
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    try:
+        # Find the assignment checklist for this emergency first
+        assigned_checklist = AssignmentChecklist.query.filter_by(emergency_id=emergency_id).first()
+        if not assigned_checklist:
+            return jsonify({'success': False, 'message': 'No checklist found for this emergency'})
+
+        assigned_subtask = AssignmentSubTask.query.filter_by(
+            sub_task_id=subtask_id,
+            assignment_checklist_id=assigned_checklist.id
+        ).first()
+
+        if assigned_subtask:
+            assigned_subtask.task_completed = False
+            assigned_subtask.task_completed_date = None
+            db.session.commit()
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'message': 'Subtask not found'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+
+@main.route('/admin/manage_checklist/override_subtask_date/<int:subtask_id>/<int:emergency_id>', methods=['POST'])
+@login_required
+def override_subtask_date(subtask_id, emergency_id):
+    """Override the completion date of a subtask"""
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+
+    try:
+        data = request.get_json()
+        new_date = datetime.strptime(data['new_date'], '%Y-%m-%dT%H:%M')
+
+        # Find the assignment checklist for this emergency first
+        assigned_checklist = AssignmentChecklist.query.filter_by(emergency_id=emergency_id).first()
+        if not assigned_checklist:
+            return jsonify({'success': False, 'message': 'No checklist found for this emergency'})
+
+        assigned_subtask = AssignmentSubTask.query.filter_by(
+            sub_task_id=subtask_id,
+            assignment_checklist_id=assigned_checklist.id
+        ).first()
+
+        if assigned_subtask:
+            assigned_subtask.task_completed = True
+            assigned_subtask.task_completed_date = new_date
+            db.session.commit()
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'message': 'Subtask not found'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+
 @main.route('/admin/manage_checklist/update_emergency_checklist', methods=['POST', 'GET'])
 @login_required
 def update_emergency_checklist():
     if not current_user.is_admin:
         abort(403)
 
-    from SIMS_Portal.models import AssignmentChecklist, AssignmentSubTask, Emergency, Checklist, SubTask
-    from SIMS_Portal.main.forms import AssignChecklistToEmergencyForm, SubTaskForm
-    checklists = Checklist.query.order_by(Checklist.id).all()
-    subtask_forms = {cl.id: SubTaskForm(prefix=f'subtask_{cl.id}') for cl in checklists}
-    active_emergencies = Emergency.query.filter(Emergency.emergency_status == 'Active').all()
     assign_form = AssignChecklistToEmergencyForm()
+    active_emergencies = Emergency.query.filter_by(emergency_status='Active').all()
     assign_form.emergency_id.choices = [(e.id, e.emergency_name) for e in active_emergencies]
-    new_checklist_form = NewChecklistForm()
+    checklists = Checklist.query.all()
 
-    # Get selected emergency (do not default to any)
-    selected_emergency_id = request.values.get('emergency_id')
-    if selected_emergency_id in (None, '', 'None'):
-        assigned_task_ids = set()
-        assigned_subtask_ids = set()
-        assign_form.emergency_id.data = None
-    else:
-        assignments = AssignmentChecklist.query.filter_by(emergency_id=selected_emergency_id).all()
-        assigned_task_ids = {a.checklist_id for a in assignments}
-        assigned_subtask_ids = {ast.sub_task_id for a in assignments for ast in a.sub_tasks}
-        assign_form.emergency_id.data = int(selected_emergency_id)
+    if request.method == 'GET':
+        emergency_id = request.args.get('emergency_id', type=int)
+        if emergency_id:
+            # Set the selected emergency in the form
+            assign_form.emergency_id.data = emergency_id
+            assigned_tasks = AssignmentChecklist.query.filter_by(emergency_id=emergency_id).all()
+            assigned_subtasks = {}
 
-    if request.method == 'POST' and selected_emergency_id not in (None, '', 'None'):
-        # Remove all current assignments for this emergency
-        AssignmentSubTask.query.filter(AssignmentSubTask.assignment_checklist_id.in_([
-            a.id for a in AssignmentChecklist.query.filter_by(emergency_id=selected_emergency_id)
-        ])).delete(synchronize_session=False)
-        AssignmentChecklist.query.filter_by(emergency_id=selected_emergency_id).delete(synchronize_session=False)
-        db.session.commit()
-        # Add new assignments
-        selected_tasks = request.form.getlist('tasks')
-        for checklist_id in selected_tasks:
-            ac = AssignmentChecklist(emergency_id=selected_emergency_id, checklist_id=checklist_id, task_completed=False)
-            db.session.add(ac)
-            db.session.flush()
-            subtask_ids = request.form.getlist(f'subtasks_{checklist_id}')
-            for subtask_id in subtask_ids:
-                ast = AssignmentSubTask(assignment_checklist_id=ac.id, sub_task_id=subtask_id, task_completed=False)
-                db.session.add(ast)
-        db.session.commit()
-        flash('Emergency checklist assignments updated.', 'success')
-        return redirect(url_for('main.update_emergency_checklist', emergency_id=selected_emergency_id))
+            for task in assigned_tasks:
+                for subtask in task.sub_tasks:
+                    assigned_subtasks[subtask.sub_task_id] = {
+                        'task_completed': subtask.task_completed,
+                        'date_updated': subtask.task_completed_date
+                    }
 
-    return render_template('admin_manage_checklist.html', checklists=checklists, subtask_forms=subtask_forms, active_emergencies=active_emergencies, assign_form=assign_form, assignment_checklists=[], assigned_task_ids=assigned_task_ids, assigned_subtask_ids=assigned_subtask_ids, active_tab='emergency-checklist', new_checklist_form=new_checklist_form, get_emergency_task_stats=get_emergency_task_stats)
+            return render_template(
+                'admin_manage_checklist.html',
+                assign_form=assign_form,
+                active_emergencies=active_emergencies,
+                checklists=checklists,
+                active_tab='emergency-checklist',
+                assigned_subtasks=assigned_subtasks,
+                assigned_task_ids=[task.checklist_id for task in assigned_tasks],
+                assigned_subtask_ids=list(assigned_subtasks.keys()),
+                get_emergency_task_stats=get_emergency_task_stats,
+                new_checklist_form=NewChecklistForm(),
+                subtask_forms={cl.id: SubTaskForm(prefix=f'subtask_{cl.id}') for cl in checklists}
+            )
 
+    elif request.method == 'POST':
+        emergency_id = request.form.get('emergency_id', type=int)
+        if not emergency_id:
+            flash('No emergency selected', 'danger')
+            return redirect(url_for('main.manage_checklist'))
+
+        try:
+            # Get existing assignments to preserve completion status
+            existing_assignments = AssignmentChecklist.query.filter_by(emergency_id=emergency_id).all()
+            existing_subtasks = {}
+
+            # Create a lookup for existing subtasks to preserve their status
+            for assignment in existing_assignments:
+                for subtask in assignment.sub_tasks:
+                    key = (subtask.sub_task_id, emergency_id)
+                    existing_subtasks[key] = {
+                        'task_completed': subtask.task_completed,
+                        'date_updated': subtask.date_updated
+                    }
+
+            # Clear existing assignments
+            AssignmentChecklist.query.filter_by(emergency_id=emergency_id).delete()
+
+            # Create new assignments based on form data
+            tasks = request.form.getlist('tasks')
+            subtask_selections = request.form.getlist('subtask_ids[]')
+
+            # Create a lookup for subtasks by parent task and ensure parent tasks exist
+            task_subtasks = {}
+            task_assignments = {}  # Store AssignmentChecklist objects by task_id
+            for subtask_selection in subtask_selections:
+                if '_' in subtask_selection:
+                    parent_id, subtask_id = map(int, subtask_selection.split('_'))
+                    # Create parent task assignment if it doesn't exist
+                    if parent_id not in task_subtasks:
+                        task_subtasks[parent_id] = []
+                        # Ensure the parent task is in the tasks list
+                        if str(parent_id) not in tasks:
+                            tasks.append(str(parent_id))
+                    task_subtasks[parent_id].append(subtask_id)
+
+            # First create all parent task assignments
+            for task_id in tasks:
+                task_id = int(task_id)  # Ensure task_id is an integer
+                # Check if a task assignment already exists
+                existing_task = AssignmentChecklist.query.filter_by(
+                    emergency_id=emergency_id,
+                    checklist_id=task_id
+                ).first()
+
+                if existing_task:
+                    task = existing_task
+                else:
+                    task = AssignmentChecklist(
+                        emergency_id=emergency_id,
+                        checklist_id=task_id,
+                        task_completed=False
+                    )
+                    db.session.add(task)
+                    db.session.flush()  # Get the task ID
+
+                task_assignments[task_id] = task
+
+                # Process subtasks for this task
+                if task_id in task_subtasks:
+                    for subtask_id in task_subtasks[task_id]:
+                        # Check if subtask already exists
+                        existing_subtask = AssignmentSubTask.query.filter_by(
+                            assignment_checklist_id=task.id,
+                            sub_task_id=subtask_id
+                        ).first()
+
+                        if not existing_subtask:
+                            # Create new subtask assignment
+                            new_subtask = AssignmentSubTask(
+                                assignment_checklist_id=task.id,
+                                sub_task_id=subtask_id
+                            )
+
+                                               # Preserve completion status if it exists
+                        key = (subtask_id, emergency_id)
+                        if key in existing_subtasks:
+                            new_subtask.task_completed = existing_subtasks[key].get('task_completed', False)
+                            new_subtask.task_completed_date = existing_subtasks[key].get('task_completed_date')
+
+                        db.session.add(new_subtask)
+
+            try:
+                db.session.commit()
+                flash('Emergency checklist updated successfully', 'success')
+            except Exception as e:
+                db.session.rollback()
+                flash(f'Error updating checklist: {str(e)}', 'danger')
+
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating emergency checklist: {str(e)}', 'danger')
+
+        return redirect(url_for('main.update_emergency_checklist', emergency_id=emergency_id))
+
+    return render_template(
+        'admin_manage_checklist.html',
+        assign_form=assign_form,
+        active_emergencies=active_emergencies,
+        checklists=checklists,
+        active_tab='emergency-checklist',
+        new_checklist_form=NewChecklistForm(),
+        subtask_forms={cl.id: SubTaskForm(prefix=f'subtask_{cl.id}') for cl in checklists},
+        get_emergency_task_stats=get_emergency_task_stats
+    )
