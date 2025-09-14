@@ -906,6 +906,13 @@ def delete_assigned_subtask(assigned_subtask_id):
 @main.route('/admin/manage_checklist/update_task_status/<int:assignment_id>', methods=['POST'])
 @login_required
 def update_task_status(assignment_id):
+    assignment_subtask = AssignmentSubTask.query.get_or_404(assignment_id)
+    if request.method == 'POST':
+        assignment_subtask.task_completed = True
+        assignment_subtask.task_completed_date = datetime.utcnow()
+        assignment_subtask.task_completed_by = current_user.id  # Set the user who completed the task
+        db.session.commit()
+        return jsonify({'success': True})
     """Update the completion status and date of a task"""
     if not current_user.is_admin:
         abort(403)
@@ -927,37 +934,54 @@ def update_task_status(assignment_id):
 
 def get_emergency_task_stats(emergency_id):
     """Get task statistics for an emergency"""
-    # Get all assignments for this emergency
+    from SIMS_Portal.models import AssignmentChecklist, AssignmentSubTask
+
+    # Get all assignments (checklists) for this emergency
     assignments = AssignmentChecklist.query.filter_by(emergency_id=emergency_id).all()
 
+    # Count main tasks (checklists)
     total_tasks = len(assignments)
-    # Count tasks where all subtasks are completed
-    completed_tasks = len([a for a in assignments if all(st.task_completed for st in a.sub_tasks)])
-    # Sum all subtasks
-    total_subtasks = sum(len(a.sub_tasks) for a in assignments)
-    # Calculate completion rate
-    completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
 
-    # Find the most recent update
+    # Get all subtasks for this emergency through AssignmentSubTask
+    all_subtasks = AssignmentSubTask.query.join(
+        AssignmentChecklist,
+        AssignmentSubTask.assignment_checklist_id == AssignmentChecklist.id
+    ).filter(
+        AssignmentChecklist.emergency_id == emergency_id
+    ).all()
+
+    # Count total and completed subtasks
+    total_subtasks = len(all_subtasks)
+    completed_subtasks = len([st for st in all_subtasks if st.task_completed])
+
+    # Calculate completion rate as rounded integer percentage
+    completion_rate = round((completed_subtasks / total_subtasks * 100) if total_subtasks > 0 else 0)
+
+    # Find the most recent update from completed subtasks
     last_update = None
-    if assignments:
-         # Get the latest update from all subtasks
-        all_subtasks = [st for a in assignments for st in a.sub_tasks]
-        completed_dates = [st.task_completed_date for st in all_subtasks if st.task_completed_date]
-        if completed_dates:
-            last_update = max(completed_dates)
+    completed_dates = [st.task_completed_date for st in all_subtasks if st.task_completed and st.task_completed_date]
+    if completed_dates:
+        last_update = max(completed_dates)
 
     return {
-        'total_tasks': total_tasks,
-        'total_subtasks': total_subtasks,
-        'completed_tasks': completed_tasks,
-        'completion_rate': completion_rate,
-        'last_update': last_update
+        'total_tasks': total_tasks,  # Number of checklists
+        'total_subtasks': total_subtasks,  # Number of sub-tasks
+        'completed_tasks': completed_subtasks,  # Number of completed sub-tasks
+        'completion_rate': completion_rate,  # Rounded percentage of completed sub-tasks
+        'last_update': last_update  # Most recent completion date
     }
 
 @main.route('/admin/manage_checklist/unmark_subtask/<int:subtask_id>/<int:emergency_id>', methods=['POST'])
 @login_required
 def unmark_subtask(subtask_id, emergency_id):
+    subtask = AssignmentSubTask.query.get_or_404(subtask_id)
+    if subtask:
+        subtask.task_completed = False
+        subtask.task_completed_date = None
+        subtask.task_completed_by = None  # Clear the completed by field
+        db.session.commit()
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Subtask not found'})
     """Unmark a subtask as completed"""
     if not current_user.is_admin:
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
@@ -983,6 +1007,15 @@ def unmark_subtask(subtask_id, emergency_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)})
+
+@main.route('/users/<int:user_id>')
+@login_required
+def get_user(user_id):
+    user = User.query.get_or_404(user_id)
+    return jsonify({
+        'id': user.id,
+        'fullname': user.fullname
+    })
 
 @main.route('/admin/manage_checklist/override_subtask_date/<int:subtask_id>/<int:emergency_id>', methods=['POST'])
 @login_required
@@ -1125,9 +1158,9 @@ def update_emergency_checklist():
                 current_subtask_ids = set(st.sub_task_id for st in task.sub_tasks)
                 selected_subtask_ids = set(task_subtasks.get(task_id, []))
 
-                # Remove subtasks that are no longer selected
+                # Remove subtasks that are no longer selected, unless they are completed
                 for subtask in list(task.sub_tasks):
-                    if subtask.sub_task_id not in selected_subtask_ids:
+                    if subtask.sub_task_id not in selected_subtask_ids and not subtask.task_completed:
                         db.session.delete(subtask)
 
                 # Add new subtasks that are selected

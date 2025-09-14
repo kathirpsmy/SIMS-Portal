@@ -423,6 +423,22 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentEmergencyId = null;
     const dateModal = new bootstrap.Modal(document.getElementById('overrideDateModal'));
 
+    // Function to update completed by information
+    function updateCompletedByInfo(checkbox, userId) {
+        const completedBySpan = checkbox.closest('tr').querySelector('.completed-by');
+        if (completedBySpan) {
+            if (checkbox.checked) {
+                fetch(`/users/${userId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        completedBySpan.textContent = `Completed by: ${data.fullname}`;
+                    });
+            } else {
+                completedBySpan.textContent = '';
+            }
+        }
+    }
+
     // Function to update parent task checkbox based on sub-tasks
     function updateParentTaskCheckbox(parentChecklistId) {
         const parentCheckbox = document.querySelector(`.parent-task[data-checklist-id="${parentChecklistId}"]`);
