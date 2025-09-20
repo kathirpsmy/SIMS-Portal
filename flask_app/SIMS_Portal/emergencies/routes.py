@@ -625,6 +625,12 @@ def update_subtask_from_emergency(emergency_id, assignment_checklist_id, subtask
     from flask import request
     from datetime import datetime
 
+    # Check if user is sims remote coordinator for this emergency
+    user_is_sims_co = check_sims_co(emergency_id)
+    if not user_is_sims_co:
+        flash('You do not have permission to edit this sub-task.', 'danger')
+        return redirect(url_for('emergencies.view_emergency', id=emergency_id))
+
     # Get the AssignmentSubTask record
     ast = AssignmentSubTask.query.filter_by(
         assignment_checklist_id=assignment_checklist_id,
@@ -634,8 +640,8 @@ def update_subtask_from_emergency(emergency_id, assignment_checklist_id, subtask
         flash('Sub-task not found.', 'danger')
         return redirect(url_for('emergencies.view_emergency', id=emergency_id))
 
-    # Only allow edit if not completed or user is admin
-    if ast.task_completed and not current_user.is_admin:
+    # Only allow edit if not completed or user is sims remote coordinator
+    if ast.task_completed and not user_is_sims_co:
         flash('You cannot edit a completed sub-task.', 'warning')
         return redirect(url_for('emergencies.view_emergency', id=emergency_id))
 

@@ -694,9 +694,17 @@ def manage_checklist():
     assigned_subtasks = {}
     for task in assigned_tasks:
         for subtask in task.sub_tasks:
+            # include who completed the subtask (user id) and name for display
+            completed_by_id = getattr(subtask, 'task_completed_by', None)
+            completed_by_name = None
+            if completed_by_id:
+                user = User.query.get(completed_by_id)
+                completed_by_name = user.fullname if user else None
             assigned_subtasks[subtask.sub_task_id] = {
                 'task_completed': subtask.task_completed,
-                'date_updated': subtask.task_completed_date if subtask.task_completed else None
+                'task_completed_date': subtask.task_completed_date if subtask.task_completed else None,
+                'task_completed_by': completed_by_id,
+                'task_completed_by_name': completed_by_name
             }
 
     return render_template('admin_manage_checklist.html',
@@ -1071,9 +1079,16 @@ def update_emergency_checklist():
 
             for task in assigned_tasks:
                 for subtask in task.sub_tasks:
+                    completed_by_id = getattr(subtask, 'task_completed_by', None)
+                    completed_by_name = None
+                    if completed_by_id:
+                        user = User.query.get(completed_by_id)
+                        completed_by_name = user.fullname if user else None
                     assigned_subtasks[subtask.sub_task_id] = {
                         'task_completed': subtask.task_completed,
-                        'task_completed_date': subtask.task_completed_date
+                        'task_completed_date': subtask.task_completed_date,
+                        'task_completed_by': completed_by_id,
+                        'task_completed_by_name': completed_by_name
                     }
 
             return render_template(

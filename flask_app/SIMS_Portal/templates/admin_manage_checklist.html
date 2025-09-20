@@ -323,9 +323,16 @@
 
                                                     {% if assigned_subtask_info.get('task_completed', false) %}
                                                     <div class="d-flex align-items-center gap-2">
-                                                        <span class="text-muted completed-date" data-subtask-id="{{ subtask.id }}">
-                                                            Completed: {{ assigned_subtask_info.get('task_completed_date').strftime('%Y-%m-%d %H:%M') if assigned_subtask_info.get('task_completed_date') else 'Never' }}
-                                                        </span>
+                                                        <div>
+                                                            <span class="text-muted completed-date" data-subtask-id="{{ subtask.id }}">
+                                                                Completed: {{ assigned_subtask_info.get('task_completed_date').strftime('%Y-%m-%d %H:%M') if assigned_subtask_info.get('task_completed_date') else 'Never' }}
+                                                            </span>
+                                                            {% if assigned_subtask_info.get('task_completed_by_name') %}
+                                                            <span class="text-muted ms-3 completed-by" data-subtask-id="{{ subtask.id }}">
+                                                                Completed by: {{ assigned_subtask_info.get('task_completed_by_name') }}
+                                                            </span>
+                                                            {% endif %}
+                                                        </div>
                                                         <button type="button" class="btn btn-sm btn-warning mark-undone"
                                                                 data-subtask-id="{{ subtask.id }}"
                                                                 data-emergency-id="{{ assign_form.emergency_id.data }}">
