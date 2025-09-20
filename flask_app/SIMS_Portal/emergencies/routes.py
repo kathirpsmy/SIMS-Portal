@@ -339,9 +339,10 @@ def view_emergency(id):
 	for ac in assignment_checklists:
 		checklist = Checklist.query.get(ac.checklist_id)
 		sub_tasks = []
-		assignment_subtasks = AssignmentSubTask.query.filter_by(assignment_checklist_id=ac.id).all()
+		# ensure subtasks are returned in the order they were added (id asc)
+		assignment_subtasks = AssignmentSubTask.query.filter_by(assignment_checklist_id=ac.id).order_by(AssignmentSubTask.id.asc()).all()
 		for ast in assignment_subtasks:
-			sub_checklist = SubTask.query.get(ast.sub_task_id)
+			sub_checklist = SubTask.query.order_by(SubTask.id.asc()).filter(SubTask.id == ast.sub_task_id).first()
 			sub_tasks.append({
 				'id': ast.sub_task_id,
 				'name': sub_checklist.name if sub_checklist else '',

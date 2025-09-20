@@ -8,13 +8,13 @@
 <div class="container">
     <div id="hideMe">
         {% with messages = get_flashed_messages(with_categories=true) %}
-               {% if messages %}
-                   {% for category, message in messages %}
-                       <div class="mt-2 alert alert-{{ category }}">
-                           {{ message }}
-                       </div>
-                   {% endfor %}
-               {% endif %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="mt-2 alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
         {% endwith %}
     </div>
     <div class="row mt-3 mb-5">
@@ -298,13 +298,8 @@
                                                 data-bs-target="#collapse{{ checklist.id }}"
                                                 aria-expanded="{{ 'true' if expanded else 'false' }}"
                                                 aria-controls="collapse{{ checklist.id }}">
-                                            <div class="form-check">
-                                                <input class="form-check-input parent-task" type="checkbox" name="tasks"
-                                                       value="{{ checklist.id }}"
-                                                       {% if checklist.id in assigned_task_ids %}checked{% endif %}
-                                                       disabled
-                                                       data-checklist-id="{{ checklist.id }}">
-                                                <label class="form-check-label">{{ checklist.task_name }}</label>
+                                            <div class="d-flex align-items-center">
+                                                <span>{{ checklist.task_name }}</span>
                                             </div>
                                         </button>
                                     </h2>
@@ -463,9 +458,15 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Initial update of all parent task checkboxes
-    document.querySelectorAll('.parent-task').forEach(parentCheckbox => {
-        updateParentTaskCheckbox(parentCheckbox.dataset.checklistId);
+    // Remove the initial update of parent task checkboxes since they're no longer needed
+    // Initialize subtask checkboxes if needed
+    document.querySelectorAll('.subtask').forEach(checkbox => {
+        const parentChecklistId = checkbox.dataset.parentChecklistId;
+        if (parentChecklistId) {
+            checkbox.addEventListener('change', function() {
+                updateParentTaskCheckbox(parentChecklistId);
+            });
+        }
     });
 
     // Handle form submission
@@ -488,7 +489,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRFToken': '{{ csrf_token() }}'
+                    'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
                 }
             })
             .then(response => response.json())
@@ -511,10 +512,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Get current date from the completed-date span
             const dateSpan = document.querySelector(`.completed-date[data-subtask-id="${currentSubtaskId}"]`);
-            const currentDate = dateSpan.textContent.replace('Completed: ', '').trim();
-
-            // Set the current date in the modal
-            document.getElementById('newCompletionDate').value = currentDate.replace(' ', 'T');
+            if (dateSpan) {
+                const currentDate = dateSpan.textContent.replace('Completed: ', '').trim();
+                if (currentDate !== 'Never') {
+                    // Convert the date string to a format that works with datetime-local input
+                    const date = new Date(currentDate);
+                    const formattedDate = date.toISOString().slice(0, 16);  // Format: YYYY-MM-DDThh:mm
+                    document.getElementById('newCompletionDate').value = formattedDate;
+                } else {
+                    // If no date is set, default to current date and time
+                    const now = new Date();
+                    const formattedDate = now.toISOString().slice(0, 16);
+                    document.getElementById('newCompletionDate').value = formattedDate;
+                }
+            }
 
             dateModal.show();
         });
@@ -524,11 +535,11 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('saveNewDate').addEventListener('click', function() {
         const newDate = document.getElementById('newCompletionDate').value;
 
-        fetch(`/admin/manage_checklist/override_subtask_date/${currentSubtaskId}/${currentEmergencyId}`, {
+    fetch(`/admin/manage_checklist/override_subtask_date/${currentSubtaskId}/${currentEmergencyId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': '{{ csrf_token() }}'
+                'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
             },
             body: JSON.stringify({ new_date: newDate })
         })

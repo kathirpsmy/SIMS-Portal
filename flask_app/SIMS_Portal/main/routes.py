@@ -974,39 +974,34 @@ def get_emergency_task_stats(emergency_id):
 @main.route('/admin/manage_checklist/unmark_subtask/<int:subtask_id>/<int:emergency_id>', methods=['POST'])
 @login_required
 def unmark_subtask(subtask_id, emergency_id):
-    subtask = AssignmentSubTask.query.get_or_404(subtask_id)
-    if subtask:
-        subtask.task_completed = False
-        subtask.task_completed_date = None
-        subtask.task_completed_by = None  # Clear the completed by field
-        db.session.commit()
-        return jsonify({'success': True})
-    return jsonify({'success': False, 'message': 'Subtask not found'})
-    """Unmark a subtask as completed"""
+    """Unmark a subtask as completed for an emergency.
+
+    The frontend sends the SubTask.id (sub_task_id) and emergency_id. We locate the
+    corresponding AssignmentSubTask by joining to AssignmentChecklist filtered by
+    the emergency, then clear completion fields.
+    """
+    # only admins may unmark via this admin endpoint
     if not current_user.is_admin:
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
 
     try:
-        # Find the assignment checklist for this emergency first
-        assigned_checklist = AssignmentChecklist.query.filter_by(emergency_id=emergency_id).first()
-        if not assigned_checklist:
-            return jsonify({'success': False, 'message': 'No checklist found for this emergency'})
-
-        assigned_subtask = AssignmentSubTask.query.filter_by(
-            sub_task_id=subtask_id,
-            assignment_checklist_id=assigned_checklist.id
+        # find the specific AssignmentSubTask for this emergency and subtask
+        assigned_subtask = AssignmentSubTask.query.join(AssignmentChecklist).filter(
+            AssignmentChecklist.emergency_id == emergency_id,
+            AssignmentSubTask.sub_task_id == subtask_id
         ).first()
 
-        if assigned_subtask:
-            assigned_subtask.task_completed = False
-            assigned_subtask.task_completed_date = None
-            db.session.commit()
-            return jsonify({'success': True})
-        else:
-            return jsonify({'success': False, 'message': 'Subtask not found'})
+        if not assigned_subtask:
+            return jsonify({'success': False, 'message': 'Subtask not found'}), 404
+
+        assigned_subtask.task_completed = False
+        assigned_subtask.task_completed_date = None
+        assigned_subtask.task_completed_by = None
+        db.session.commit()
+        return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)})
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @main.route('/users/<int:user_id>')
 @login_required
@@ -1025,29 +1020,35 @@ def override_subtask_date(subtask_id, emergency_id):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
 
     try:
-        data = request.get_json()
-        new_date = datetime.strptime(data['new_date'], '%Y-%m-%dT%H:%M')
+        data = request.get_json() or {}
+        new_date_str = data.get('new_date')
+        if not new_date_str:
+            return jsonify({'success': False, 'message': 'No new_date provided'}), 400
 
-        # Find the assignment checklist for this emergency first
-        assigned_checklist = AssignmentChecklist.query.filter_by(emergency_id=emergency_id).first()
-        if not assigned_checklist:
-            return jsonify({'success': False, 'message': 'No checklist found for this emergency'})
+        # parse the datetime-local format coming from browser (e.g. 2025-09-20T14:30)
+        try:
+            new_date = datetime.strptime(new_date_str, '%Y-%m-%dT%H:%M')
+        except ValueError:
+            # try ISO format fallback
+            new_date = datetime.fromisoformat(new_date_str)
 
-        assigned_subtask = AssignmentSubTask.query.filter_by(
-            sub_task_id=subtask_id,
-            assignment_checklist_id=assigned_checklist.id
+        # find the AssignmentSubTask that belongs to the given emergency and subtask
+        assigned_subtask = AssignmentSubTask.query.join(AssignmentChecklist).filter(
+            AssignmentChecklist.emergency_id == emergency_id,
+            AssignmentSubTask.sub_task_id == subtask_id
         ).first()
 
-        if assigned_subtask:
-            assigned_subtask.task_completed = True
-            assigned_subtask.task_completed_date = new_date
-            db.session.commit()
-            return jsonify({'success': True})
-        else:
-            return jsonify({'success': False, 'message': 'Subtask not found'})
+        if not assigned_subtask:
+            return jsonify({'success': False, 'message': 'Subtask not found'}), 404
+
+        assigned_subtask.task_completed = True
+        assigned_subtask.task_completed_date = new_date
+        assigned_subtask.task_completed_by = current_user.id
+        db.session.commit()
+        return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)})
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @main.route('/admin/manage_checklist/update_emergency_checklist', methods=['POST', 'GET'])
 @login_required
@@ -1072,7 +1073,7 @@ def update_emergency_checklist():
                 for subtask in task.sub_tasks:
                     assigned_subtasks[subtask.sub_task_id] = {
                         'task_completed': subtask.task_completed,
-                        'date_updated': subtask.task_completed_date
+                        'task_completed_date': subtask.task_completed_date
                     }
 
             return render_template(
@@ -1106,7 +1107,7 @@ def update_emergency_checklist():
                     key = (subtask.sub_task_id, emergency_id)
                     existing_subtasks[key] = {
                         'task_completed': subtask.task_completed,
-                        'date_updated': subtask.task_completed_date if subtask.task_completed else None
+                        'task_completed_date': subtask.task_completed_date if subtask.task_completed else None
                     }
 
             # Get or create assignments based on form data
