@@ -1201,39 +1201,90 @@ def update_emergency_checklist():
                         'task_completed_date': subtask.task_completed_date if subtask.task_completed else None
                     }
 
-            # Get or create assignments based on form data
-            tasks = request.form.getlist('tasks')
-            subtask_selections = request.form.getlist('subtask_ids[]')
-
-            # Create a set of task IDs that should be checked (parent tasks with selected subtasks)
-            tasks_with_subtasks = set()
-
-            # Create a lookup for subtasks by parent task and ensure parent tasks exist
+            # Robustly parse submitted tasks and subtasks from the form. The template may submit
+            # subtasks as 'subtasks_<parent_id>' or as an array 'subtask_ids[]' containing
+            # values like '<parent>_<subtask>' or just subtask ids. Normalize into two structures:
+            # - tasks: set of parent checklist ids (strings)
+            # - task_subtasks: dict[parent_id] -> set(subtask_ids)
+            tasks = set(request.form.getlist('tasks'))
             task_subtasks = {}
-            task_assignments = {}  # Store AssignmentChecklist objects by task_id
-            for subtask_selection in subtask_selections:
-                if '_' in subtask_selection:
-                    parent_id, subtask_id = map(int, subtask_selection.split('_'))
-                    # Create parent task assignment if it doesn't exist
-                    if parent_id not in task_subtasks:
-                        task_subtasks[parent_id] = []
-                        # Ensure the parent task is in the tasks list
-                        tasks.append(str(parent_id))
-                    task_subtasks[parent_id].append(subtask_id)
 
-            # First handle existing task assignments
+            # Handle keys like 'subtasks_<parent_id>' which contain subtask ids
+            for key in request.form.keys():
+                if key.startswith('subtasks_'):
+                    try:
+                        parent_id = int(key.split('_', 1)[1])
+                    except Exception:
+                        continue
+                    values = request.form.getlist(key)
+                    for v in values:
+                        try:
+                            sid = int(v)
+                        except Exception:
+                            continue
+                        task_subtasks.setdefault(parent_id, set()).add(sid)
+                        tasks.add(str(parent_id))
+
+            # Handle older or alternate input name 'subtask_ids[]' or 'subtask_ids'
+            subtask_list_values = request.form.getlist('subtask_ids[]') or request.form.getlist('subtask_ids')
+            if subtask_list_values:
+                for val in subtask_list_values:
+                    if not val:
+                        continue
+                    if '_' in val:
+                        try:
+                            parent_id, sid = map(int, val.split('_'))
+                        except Exception:
+                            continue
+                        task_subtasks.setdefault(parent_id, set()).add(sid)
+                        tasks.add(str(parent_id))
+                    else:
+                        # If only a subtask id is provided, lookup its parent checklist
+                        try:
+                            sid = int(val)
+                        except Exception:
+                            continue
+                        try:
+                            from SIMS_Portal.models import SubTask
+                            sub = SubTask.query.get(sid)
+                            if sub:
+                                task_subtasks.setdefault(sub.checklist_id, set()).add(sid)
+                                tasks.add(str(sub.checklist_id))
+                        except Exception:
+                            continue
+
+            # Keep a map of task assignments we will retain or create
+            task_assignments = {}
+
+            # Process existing assignments: if parent task is no longer selected, do NOT delete
+            # completed subtasks. Only delete the entire assignment if it contains no completed subtasks
+            # and is not selected.
             for existing_assignment in existing_assignments:
-                if str(existing_assignment.checklist_id) not in tasks:
-                    # If task is no longer selected, remove its subtasks
-                    AssignmentSubTask.query.filter_by(assignment_checklist_id=existing_assignment.id).delete()
-                    db.session.delete(existing_assignment)
+                checklist_id_str = str(existing_assignment.checklist_id)
+                if checklist_id_str not in tasks:
+                    # Parent not selected in the submitted form
+                    has_completed = any(st.task_completed for st in existing_assignment.sub_tasks)
+                    if has_completed:
+                        # Remove only uncompleted subtasks
+                        for st in list(existing_assignment.sub_tasks):
+                            if not st.task_completed:
+                                db.session.delete(st)
+                        # retain the assignment to preserve completed subtasks
+                        task_assignments[existing_assignment.checklist_id] = existing_assignment
+                    else:
+                        # Safe to remove assignment and any subtasks
+                        AssignmentSubTask.query.filter_by(assignment_checklist_id=existing_assignment.id).delete()
+                        db.session.delete(existing_assignment)
                 else:
-                    # Keep existing assignment
+                    # Parent selected: keep the assignment for further processing
                     task_assignments[existing_assignment.checklist_id] = existing_assignment
 
-            # Now handle tasks that need to be created
-            for task_id in tasks:
-                task_id = int(task_id)
+            # Now ensure tasks that need to be created exist, and synchronize subtasks
+            for task_id_str in list(tasks):
+                try:
+                    task_id = int(task_id_str)
+                except Exception:
+                    continue
                 if task_id not in task_assignments:
                     # Create new task assignment only if it doesn't exist
                     new_task = AssignmentChecklist(
@@ -1243,10 +1294,11 @@ def update_emergency_checklist():
                     )
                     db.session.add(new_task)
                     db.session.flush()
-                    task_assignments[task_id] = new_task                # Process subtasks for this task
+                    task_assignments[task_id] = new_task
+
                 task = task_assignments[task_id]
 
-                # First, remove any unselected subtasks
+                # Current subtask ids for this task assignment
                 current_subtask_ids = set(st.sub_task_id for st in task.sub_tasks)
                 selected_subtask_ids = set(task_subtasks.get(task_id, []))
 
@@ -1256,25 +1308,19 @@ def update_emergency_checklist():
                         db.session.delete(subtask)
 
                 # Add new subtasks that are selected
-                if task_id in task_subtasks:
-                    tasks_with_subtasks.add(task_id)  # Mark this task as having subtasks
-                    for subtask_id in task_subtasks[task_id]:
-                        # Create and add new subtask assignment immediately
+                if selected_subtask_ids:
+                    for subtask_id in selected_subtask_ids:
                         if subtask_id not in current_subtask_ids:
                             new_subtask = AssignmentSubTask(
                                 assignment_checklist_id=task.id,
                                 sub_task_id=subtask_id,
                                 task_completed=False
                             )
-                            # Add the new subtask immediately
-                            db.session.add(new_subtask)
-
-                            # Set the completion status from existing data if available
+                            # Restore completion state if we have it from existing records
                             key = (subtask_id, emergency_id)
                             if key in existing_subtasks:
                                 new_subtask.task_completed = existing_subtasks[key].get('task_completed', False)
                                 new_subtask.task_completed_date = existing_subtasks[key].get('task_completed_date')
-
 
                             db.session.add(new_subtask)
 
