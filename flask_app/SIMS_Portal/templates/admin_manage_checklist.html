@@ -357,32 +357,81 @@
                 <!-- Task Report Tab -->
                 <div class="tab-pane fade {{ 'show active' if active_tab == 'task-report' else '' }}" id="task-report" role="tabpanel" aria-labelledby="task-report-tab">
                     <h3>Task Report</h3>
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Emergency</th>
-                                    <th>Total Tasks</th>
-                                    <th>Total Sub-Tasks</th>
-                                    <th>Completed Tasks</th>
-                                    <th>Completion Rate</th>
-                                    <th>Last Update</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for emergency in active_emergencies %}
-                                {% set stats = get_emergency_task_stats(emergency.id) %}
-                                <tr>
-                                    <td>{{ emergency.emergency_name }}</td>
-                                    <td>{{ stats.total_tasks }}</td>
-                                    <td>{{ stats.total_subtasks }}</td>
-                                    <td>{{ stats.completed_tasks }}</td>
-                                    <td>{{ "%.2f"|format(stats.completion_rate) }}%</td>
-                                    <td>{{ stats.last_update.strftime('%Y-%m-%d %H:%M:%S') if stats.last_update else '-' }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+
+                    <p class="text-muted">Overview of tasks and subtasks for active emergencies. Expand each emergency to see assigned checklists, subtasks, who completed them and when.</p>
+
+                    <div class="accordion" id="taskReportAccordion">
+                        {% for emergency in active_emergencies %}
+                            {% set stats = emergency_task_stats.get(emergency.id) if emergency_task_stats is defined else get_emergency_task_stats(emergency.id) %}
+                            <div class="accordion-item">
+                                <h2 class="accordion-header" id="trh-{{ emergency.id }}">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#trc-{{ emergency.id }}" aria-expanded="false" aria-controls="trc-{{ emergency.id }}">
+                                        <div class="d-flex w-100 justify-content-between align-items-center">
+                                            <div>
+                                                <strong class="text-danger">{{ emergency.emergency_name }}</strong>
+                                                <div class="small text-muted">Tasks: {{ stats.total_tasks if stats else 0 }} | Subtasks: {{ stats.total_subtasks if stats else 0 }} | Completed: {{ stats.completed_tasks if stats else 0 }}</div>
+                                            </div>
+                                            <div class="text-end">
+                                                <div class="fw-bold">{{ stats.completion_rate if stats else 0 }}%</div>
+                                                <div class="small text-muted">Last update: {{ stats.last_update if stats and stats.last_update else 'Never' }}</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                </h2>
+                                <div id="trc-{{ emergency.id }}" class="accordion-collapse collapse" aria-labelledby="trh-{{ emergency.id }}" data-bs-parent="#taskReportAccordion">
+                                    <div class="accordion-body">
+                                        {% if stats and stats.assignments %}
+                                            {% for a in stats.assignments %}
+                                                <div class="card mb-3">
+                                                    <div class="card-body">
+                                                        <div class="d-flex justify-content-between">
+                                                            <div>
+                                                                <h5 class="card-title mb-1">{{ a.checklist_name or 'Checklist' }}</h5>
+                                                                <div class="small text-muted">Subtasks: {{ a.total_subtasks }} | Completed: {{ a.completed_subtasks }} | Completion: {{ a.completion_rate }}%</div>
+                                                            </div>
+                                                            <div class="text-end">
+                                                                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#assign-{{ emergency.id }}-{{ a.checklist_id }}">Show Subtasks</button>
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="collapse mt-3" id="assign-{{ emergency.id }}-{{ a.checklist_id }}">
+                                                            <table class="table table-sm">
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th>Subtask</th>
+                                                                        <th>Status</th>
+                                                                        <th>Completed By</th>
+                                                                        <th>Completed At</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {% for st in a.subtasks %}
+                                                                        <tr>
+                                                                            <td>{{ st.name }}</td>
+                                                                            <td>
+                                                                                {% if st.completed %}
+                                                                                    <span class="badge bg-success">Done</span>
+                                                                                {% else %}
+                                                                                    <span class="badge bg-secondary">Pending</span>
+                                                                                {% endif %}
+                                                                            </td>
+                                                                            <td>{{ st.completed_by_name or (st.completed_by and st.completed_by|string) or '' }}</td>
+                                                                            <td>{{ st.completed_date or '—' }}</td>
+                                                                        </tr>
+                                                                    {% endfor %}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                        {% else %}
+                                            <div class="alert alert-secondary">No assignments or subtasks for this emergency.</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
                     </div>
                 </div>
 

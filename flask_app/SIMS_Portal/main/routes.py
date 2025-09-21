@@ -719,7 +719,8 @@ def manage_checklist():
         new_checklist_form=new_checklist_form,
 		assigned_subtasks=assigned_subtasks,
 		assigned_tasks=assigned_tasks,
-        get_emergency_task_stats=get_emergency_task_stats)
+    get_emergency_task_stats=get_emergency_task_stats,
+    emergency_task_stats=emergency_task_stats)
 
 @main.route('/admin/manage_checklist/add_subtask/<int:checklist_id>', methods=['POST'])
 @login_required
@@ -957,40 +958,101 @@ def update_task_status(assignment_id):
 def get_emergency_task_stats(emergency_id):
     """Get task statistics for an emergency"""
     from SIMS_Portal.models import AssignmentChecklist, AssignmentSubTask
-
     # Get all assignments (checklists) for this emergency
     assignments = AssignmentChecklist.query.filter_by(emergency_id=emergency_id).all()
 
     # Count main tasks (checklists)
     total_tasks = len(assignments)
 
-    # Get all subtasks for this emergency through AssignmentSubTask
-    all_subtasks = AssignmentSubTask.query.join(
-        AssignmentChecklist,
-        AssignmentSubTask.assignment_checklist_id == AssignmentChecklist.id
-    ).filter(
-        AssignmentChecklist.emergency_id == emergency_id
-    ).all()
+    # Aggregate across assignments
+    total_subtasks = 0
+    completed_subtasks = 0
+    all_completed_dates = []
+    assignments_data = []
 
-    # Count total and completed subtasks
-    total_subtasks = len(all_subtasks)
-    completed_subtasks = len([st for st in all_subtasks if st.task_completed])
+    # Lazy import of models used below
+    from SIMS_Portal.models import Checklist, SubTask, User
 
-    # Calculate completion rate as rounded integer percentage
+    for ac in assignments:
+        checklist = getattr(ac, 'checklist', None)
+        if checklist is None and getattr(ac, 'checklist_id', None):
+            checklist = Checklist.query.get(ac.checklist_id)
+
+        checklist_name = getattr(checklist, 'task_name', None) or getattr(checklist, 'name', 'Checklist')
+
+        # Use the AssignmentSubTask rows related to this assignment
+        ast_rows = getattr(ac, 'sub_tasks', []) or AssignmentSubTask.query.filter_by(assignment_checklist_id=ac.id).all()
+
+        assignment_total_subtasks = len(ast_rows)
+        assignment_completed = 0
+        subtasks_list = []
+
+        for ast in ast_rows:
+            # Resolve the SubTask entity
+            sub = getattr(ast, 'sub_task', None)
+            if sub is None and getattr(ast, 'sub_task_id', None):
+                sub = SubTask.query.get(ast.sub_task_id)
+
+            sub_name = getattr(sub, 'name', '') if sub is not None else ''
+
+            completed = bool(getattr(ast, 'task_completed', False))
+            completed_date = getattr(ast, 'task_completed_date', None)
+            completed_by_id = getattr(ast, 'task_completed_by', None) or getattr(ast, 'completed_by', None)
+            completed_by_name = None
+            if completed_by_id:
+                try:
+                    user = User.query.get(completed_by_id)
+                    if user:
+                        completed_by_name = f"{getattr(user, 'firstname', '')} {getattr(user, 'lastname', '')}".strip()
+                except Exception:
+                    completed_by_name = None
+
+            if completed:
+                assignment_completed += 1
+                completed_subtasks += 1
+                if completed_date:
+                    all_completed_dates.append(completed_date)
+
+            subtasks_list.append({
+                'id': getattr(sub, 'id', None) or getattr(ast, 'sub_task_id', None),
+                'name': sub_name,
+                'completed': completed,
+                'completed_by': completed_by_id,
+                'completed_by_name': completed_by_name,
+                'completed_date': completed_date
+            })
+
+        total_subtasks += assignment_total_subtasks
+
+        assignment_completion_rate = round((assignment_completed / assignment_total_subtasks * 100) if assignment_total_subtasks > 0 else 0)
+
+        assignments_data.append({
+            'assignment_id': getattr(ac, 'id', None),
+            'checklist_id': getattr(checklist, 'id', None) if checklist is not None else getattr(ac, 'checklist_id', None),
+            'checklist_name': checklist_name,
+            'total_subtasks': assignment_total_subtasks,
+            'completed_subtasks': assignment_completed,
+            'completion_rate': assignment_completion_rate,
+            'subtasks': subtasks_list
+        })
+
     completion_rate = round((completed_subtasks / total_subtasks * 100) if total_subtasks > 0 else 0)
 
-    # Find the most recent update from completed subtasks
     last_update = None
-    completed_dates = [st.task_completed_date for st in all_subtasks if st.task_completed and st.task_completed_date]
-    if completed_dates:
-        last_update = max(completed_dates)
+    if all_completed_dates:
+        try:
+            last_dt = max(all_completed_dates)
+            last_update = last_dt.strftime('%Y-%m-%d %H:%M:%S') if hasattr(last_dt, 'strftime') else str(last_dt)
+        except Exception:
+            last_update = str(max(all_completed_dates))
 
     return {
-        'total_tasks': total_tasks,  # Number of checklists
-        'total_subtasks': total_subtasks,  # Number of sub-tasks
-        'completed_tasks': completed_subtasks,  # Number of completed sub-tasks
-        'completion_rate': completion_rate,  # Rounded percentage of completed sub-tasks
-        'last_update': last_update  # Most recent completion date
+        'total_tasks': total_tasks,
+        'total_subtasks': total_subtasks,
+        'completed_tasks': completed_subtasks,
+        'completion_rate': completion_rate,
+        'last_update': last_update,
+        'assignments': assignments_data
     }
 
 @main.route('/admin/manage_checklist/unmark_subtask/<int:subtask_id>/<int:emergency_id>', methods=['POST'])
