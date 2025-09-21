@@ -30,12 +30,12 @@
                                 &nbsp Manage Profiles
                             </a>
                         </li>
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <div class="text-secondary">
-                                <i data-feather="award" class="mr-3"></i>
-                                &nbsp Assign Badges
-                            </div>
-                        </li>
+						<li class="list-group-item d-flex justify-content-between align-items-center">
+							<a href="/admin/assign_badge" class="text-secondary">
+								<i data-feather="award" class="mr-3"></i>
+								&nbsp Assign Badges
+							</a>
+						</li>
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             <a href="/admin/upload_badges" class="text-secondary">
                                 <i data-feather="upload" class="mr-3"></i>
@@ -85,10 +85,10 @@
                             </a>
                         </li>
                         <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <a href="#" class="text-secondary active-link">
+                            <div class="text-secondary  active-link">
                                 <i data-feather="check" class="mr-3"></i>
                                 &nbsp Checklists
-                            </a>
+                            </div>
                         </li>
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             <a href="/manual_refresh" class="text-secondary">
@@ -148,105 +148,85 @@
                         </form>
                     </div>
 
-                    <table class='table table-striped table-hover mt-5'>
-                        <thead>
-                            <tr>
-                                <th style="width: 30%">Task Name</th>
-                                <th style="width: 50%">Description</th>
-                                <th style="width: 20%">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    <div class="row row-cols-1 g-4 mt-4">
                         {% for checklist in checklists %}
-                            <tr>
-                                <td>
-                                    {% if checklist.task_url %}
-                                        <a href="{{ checklist.task_url }}" target="_blank">{{ checklist.task_name }}</a>
-                                    {% else %}
-                                        {{ checklist.task_name }}
-                                    {% endif %}
-                                </td>
-                                <td>{{ checklist.task_description }}</td>
-                                <td>
-                                    <div class="d-flex gap-2">
-                                        <a href="{{ url_for('main.edit_checklist', id=checklist.id) }}" class="btn btn-sm btn-warning">Edit</a>
-                                        <a href="{{ url_for('main.remove_checklist', id=checklist.id) }}" class="btn btn-sm btn-danger">Remove</a>
+                        <div class="col">
+                            <div class="card shadow-sm checklist-card">
+                                <div class="card-header d-flex justify-content-between align-items-start">
+                                    <div class="me-3">
+                                        <h5 class="mb-1">
+                                            {% if checklist.task_url %}
+                                            <a href="{{ checklist.task_url }}" target="_blank" class="text-decoration-none text-danger">
+                                                {{ checklist.task_name }}
+                                            </a>
+                                            {% else %}
+                                                <span class="text-danger">{{ checklist.task_name }}</span>
+                                            {% endif %}
+                                        </h5>
+                                        <p class="mb-0 text-muted small">{{ checklist.task_description }}</p>
                                     </div>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td colspan="3">
-                                    <div class="p-3 mb-4 border rounded bg-light">
-                                    <!-- Sub-Tasks Table -->
-                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <div class="d-flex gap-2 align-items-start">
+                                        <a href="{{ url_for('main.edit_checklist', id=checklist.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+                                        <a href="{{ url_for('main.remove_checklist', id=checklist.id) }}" class="btn btn-sm btn-outline-danger">Remove</a>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
                                         <h6 class="mb-0">Sub-Tasks</h6>
-                                        <button class="btn btn-link" type="button" data-bs-toggle="collapse" data-bs-target="#subtasks-{{ checklist.id }}" aria-expanded="false">
-                                            <i class="fas fa-chevron-down"></i>
-                                        </button>
+                                        <small class="text-muted">{{ checklist.sub_tasks|length }} total</small>
                                     </div>
-                                    <div class="collapse" id="subtasks-{{ checklist.id }}">
-                                        <table class="table table-bordered">
-                                            <thead>
-                                                <tr>
-                                                    <th style="width: 30%">Name</th>
-                                                    <th style="width: 50%">Description</th>
-                                                    <th style="width: 20%">Actions</th>
-                                                </tr>
-                                            </thead>
-                                        <tbody>
-                                            {% for subtask in checklist.sub_tasks|sort(attribute='id') %}
-                                            <tr>
-                                                <td>
-                                                    {% if subtask.task_url %}
-                                                        <a href="{{ subtask.task_url }}" target="_blank">{{ subtask.name }}</a>
-                                                    {% else %}
-                                                        {{ subtask.name }}
-                                                    {% endif %}
-                                                </td>
-                                                <td>{{ subtask.description }}</td>
-                                                <td>
-                                                    <div class="d-flex gap-2">
-                                                        <a href="{{ url_for('main.edit_subtask', subtask_id=subtask.id) }}" class="btn btn-sm btn-warning">Edit</a>
-                                                        <a href="{{ url_for('main.remove_subtask', subtask_id=subtask.id) }}" class="btn btn-sm btn-danger">Remove</a>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                    <!-- Add Sub-Task Form -->
-                                    <form action="{{ url_for('main.add_subtask', checklist_id=checklist.id) }}" method="POST" class="row g-2">
+
+                                    <div class="list-group mb-3">
+                                        {% for subtask in checklist.sub_tasks|sort(attribute='id') %}
+                                        <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+                                            <div>
+                                                {% if subtask.task_url %}
+                                                    <a href="{{ subtask.task_url }}" target="_blank" class="fw-semibold">{{ subtask.name }}</a>
+                                                {% else %}
+                                                    <span class="fw-semibold">{{ subtask.name }}</span>
+                                                {% endif %}
+                                                <div class="small text-muted">{{ subtask.description }}</div>
+                                            </div>
+                                            <div class="d-flex gap-2">
+                                                <a href="{{ url_for('main.edit_subtask', subtask_id=subtask.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                                                <a href="{{ url_for('main.remove_subtask', subtask_id=subtask.id) }}" class="btn btn-sm btn-outline-danger">Remove</a>
+                                            </div>
+                                        </div>
+                                        {% else %}
+                                        <div class="list-group-item text-muted">No sub-tasks yet. Add one below.</div>
+                                        {% endfor %}
+                                    </div>
+
+                                    <!-- Add Sub-Task Form (keeps same fields and errors) -->
+                                    <form action="{{ url_for('main.add_subtask', checklist_id=checklist.id) }}" method="POST" class="row g-2 align-items-center">
                                         {{ subtask_forms[checklist.id].hidden_tag() }}
-                                        <div class="col-md-3">
+                                        <div class="col-md-4">
                                             {{ subtask_forms[checklist.id].name(class_="form-control", placeholder="Sub-Task Name") }}
                                             {% for error in subtask_forms[checklist.id].name.errors %}
                                                 <div class="text-danger small">{{ error }}</div>
                                             {% endfor %}
                                         </div>
-                                        <div class="col-md-4">
+                                        <div class="col-md-5">
                                             {{ subtask_forms[checklist.id].description(class_="form-control", placeholder="Description") }}
                                             {% for error in subtask_forms[checklist.id].description.errors %}
                                                 <div class="text-danger small">{{ error }}</div>
                                             {% endfor %}
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-2">
                                             {{ subtask_forms[checklist.id].task_url(class_="form-control", placeholder="URL") }}
                                             {% for error in subtask_forms[checklist.id].task_url.errors %}
                                                 <div class="text-danger small">{{ error }}</div>
                                             {% endfor %}
                                         </div>
-                                        <div class="col-md-2">
-                                            <button type="submit" class="btn btn-success">Add Sub-Task</button>
+                                        <div class="col-md-1 text-end">
+                                            <button type="submit" class="btn btn-success">Add</button>
                                         </div>
                                     </form>
-                                    </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr><td colspan="3"><hr class="my-4"></td></tr>
+                                </div>
+                            </div>
+                        </div>
                         {% endfor %}
-                        </tbody>
-                    </table>
+                    </div>
                 </div>
 
                 <!-- Emergency Checklist Tab -->
@@ -273,17 +253,18 @@
                         </form>
                     </div>
 
-                    <!-- Emergency Checklist Form -->
+                    <!-- Emergency Checklist Form: only show when an emergency is selected -->
+                    {% if assign_form.emergency_id.data %}
                     <form id="emergency-checklist-form" action="{{ url_for('main.update_emergency_checklist') }}" method="POST">
                         {{ assign_form.hidden_tag() }}
                         <input type="hidden" name="emergency_id" value="{{ assign_form.emergency_id.data }}">
                         <div class="mb-3">
                             <label class="form-label">Select Tasks and Sub-Tasks</label>
                             <div class="accordion" id="checklistAccordion">
-                                {% for checklist in checklists %}
+                                {% for checklist in checklists|sort(attribute='id') %}
                                 {% set expanded = false %}
                                 {% set all_subtasks_completed = true %}
-                                {% for subtask in checklist.sub_tasks %}
+                                {% for subtask in checklist.sub_tasks|sort(attribute='id') %}
                                     {% if subtask.id in assigned_subtask_ids %}
                                         {% set expanded = true %}
                                         {% if not assigned_subtasks.get(subtask.id, {}).get('task_completed', false) %}
@@ -291,6 +272,15 @@
                                         {% endif %}
                                     {% endif %}
                                 {% endfor %}
+                                {# compute selected / total counts so header can show summary without expanding #}
+                                {% set total_subtasks = checklist.sub_tasks|length %}
+                                {% set ns = namespace(count=0) %}
+                                {% for st in checklist.sub_tasks %}
+                                    {% if st.id in assigned_subtask_ids %}
+                                        {% set ns.count = ns.count + 1 %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% set selected_count = ns.count %}
                                 <div class="accordion-item">
                                     <h2 class="accordion-header" id="heading{{ checklist.id }}">
                                         <button class="accordion-button {% if not expanded %}collapsed{% endif %}"
@@ -299,7 +289,9 @@
                                                 aria-expanded="{{ 'true' if expanded else 'false' }}"
                                                 aria-controls="collapse{{ checklist.id }}">
                                             <div class="d-flex align-items-center">
-                                                <span>{{ checklist.task_name }}</span>
+                                                <span>{{ checklist.task_name }}
+                                                    <small class="text-muted ms-2">({{ selected_count }} of {{ total_subtasks }} selected)</small>
+                                                </span>
                                             </div>
                                         </button>
                                     </h2>
@@ -308,7 +300,7 @@
                                          aria-labelledby="heading{{ checklist.id }}"
                                          data-bs-parent="#checklistAccordion">
                                         <div class="accordion-body">
-                                            {% for subtask in checklist.sub_tasks %}
+                                            {% for subtask in checklist.sub_tasks|sort(attribute='id') %}
                                             {% set assigned_subtask_info = assigned_subtasks.get(subtask.id, {}) %}
                                             <div class="form-check">
                                                 <div class="d-flex align-items-center gap-3">
@@ -356,6 +348,9 @@
                         </div>
                         <button type="submit" class="btn btn-primary">Update Assignments</button>
                     </form>
+                    {% else %}
+                    <div class="alert alert-secondary">Please select an emergency from the dropdown above to view and update tasks.</div>
+                    {% endif %}
 
                 </div>
 

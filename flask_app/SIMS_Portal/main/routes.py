@@ -783,8 +783,15 @@ def add_checklist():
 @main.route('/admin/manage_checklist/remove/<int:id>', methods=['GET', 'POST'])
 @login_required
 def remove_checklist(id):
-    from SIMS_Portal.models import Checklist
+    from SIMS_Portal.models import Checklist, AssignmentChecklist
     checklist = Checklist.query.get_or_404(id)
+
+    # Prevent deletion if this checklist is assigned to any emergency assignments
+    assignment_count = AssignmentChecklist.query.filter_by(checklist_id=id).count()
+    if assignment_count and assignment_count > 0:
+        flash(f'Cannot delete checklist "{checklist.task_name}" because it is assigned to {assignment_count} assignment(s).', 'danger')
+        return redirect(url_for('main.manage_checklist'))
+
     db.session.delete(checklist)
     db.session.commit()
     flash('Checklist removed successfully.', 'success')
@@ -810,8 +817,15 @@ def edit_subtask(subtask_id):
 @main.route('/admin/manage_checklist/remove_subtask/<int:subtask_id>', methods=['GET', 'POST'])
 @login_required
 def remove_subtask(subtask_id):
-    from SIMS_Portal.models import SubTask
+    from SIMS_Portal.models import SubTask, AssignmentSubTask
     subtask = SubTask.query.get_or_404(subtask_id)
+
+    # Prevent deletion if this subtask is used in any assignment
+    assigned_count = AssignmentSubTask.query.filter_by(sub_task_id=subtask_id).count()
+    if assigned_count and assigned_count > 0:
+        flash(f'Cannot delete sub-task "{subtask.name}" because it is assigned to {assigned_count} assignment(s).', 'danger')
+        return redirect(url_for('main.manage_checklist'))
+
     db.session.delete(subtask)
     db.session.commit()
     flash('Sub-task removed successfully.', 'success')
